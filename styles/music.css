@@ -5395,7 +5395,17 @@
 @keyframes listening-upright-one { from{transform:rotate(0deg)} to{transform:rotate(-360deg)} }
 @keyframes listening-upright-two { from{transform:rotate(-180deg)} to{transform:rotate(-900deg)} }
 @keyframes listening-meeting { 0%,46%,59%,100%{opacity:0;transform:scale(.65) rotate(-12deg)} 49%,52%{opacity:1;transform:scale(1.15) rotate(0deg)} 55%{opacity:.9;transform:scale(.95) rotate(10deg)} }
-.mp-apple .listening-player-presence { position:relative; z-index:2; align-self:center; display:flex; align-items:center; gap:8px; border:0; background:none; color:var(--c-music-accent); font:inherit; font-size:12px; min-height:40px; padding:4px 12px; max-width:90%; cursor:pointer; flex-shrink:0; }
+.mp-apple .listening-player-presence { position:relative; z-index:2; align-self:center; display:flex; align-items:center; justify-content:center; gap:9px; border:0; background:none; color:var(--c-music-accent); font:inherit; font-size:12px; min-height:48px; padding:4px 12px; max-width:94%; cursor:pointer; flex-shrink:0; border-radius:18px; }
+.listening-player-presence:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
+.listening-presence-copy { min-width:0; text-align:left; }
+.listening-presence-copy strong { display:block; font-size:12px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.listening-presence-copy small { display:block; margin-top:2px; font-size:10px; font-variant-numeric:tabular-nums; color:var(--c-music-accent); opacity:.8; }
+.listening-duet { --duet-size:34px; display:inline-flex; align-items:center; width:calc(var(--duet-size) * 2 - 9px); height:var(--duet-size); flex-shrink:0; }
+.listening-duet-person { position:relative; width:var(--duet-size); height:var(--duet-size); flex-shrink:0; border-radius:50%; }
+.listening-duet-person + .listening-duet-person { margin-left:-9px; }
+.listening-duet-photo { box-sizing:border-box; position:relative; display:grid; place-items:center; width:100%; height:100%; overflow:hidden; border-radius:50%; border:2px solid #ffffffd9; background:var(--c-music-panel,var(--c-page-body-bg,#f8eaf0)); color:var(--c-music-text,var(--c-text,#704354)); font-size:12px; }
+.listening-duet-photo img { width:100%; height:100%; display:block; object-fit:cover; }
+.listening-player-presence .listening-duet { --duet-size:28px; }
 .listening-avatar-pair { display:flex; padding-right:2px; flex-shrink:0; }
 .listening-avatar-pair>span { width:26px; height:26px; border-radius:50%; overflow:hidden; background:#f4d4e2; border:2px solid #ffffffb0; display:grid; place-items:center; font-size:11px; color:#833d58; }
 .listening-avatar-pair>span+span { margin-left:-5px; }
@@ -5486,10 +5496,10 @@
 @keyframes listening-ring-recede { 0%,46%,72%,100%{opacity:1} 49%,67%{opacity:0} }
 .music-float[data-expanded],.music-float[data-together][data-expanded] { width:min(286px,calc(100% - 16px)); }
 .music-float[data-expanded] .music-float-hide { font-size:13px; }
-.listening-planets[data-orbiting="false"] .listening-ring-base { animation:none;opacity:1; }
+.listening-planets[data-orbiting="false"] .listening-ring-base { opacity:1!important; }
 /* Quiet regular heartbeats at the orbital meeting, with a soft travelling highlight. */
 @keyframes listening-ring-meeting { 0%,50%,70%,100%{opacity:0} 52%,63%{opacity:1} }
-@keyframes listening-ring-recede { 0%,50%,70%,100%{opacity:1} 52%,63%{opacity:0} }
+@keyframes listening-ring-recede { 0%,48%,72%,100%{opacity:1} 49%,71%{opacity:0} }
 .listening-planets[data-orbiting="false"] .listening-wave-window { visibility:hidden; }
 .music-float .music-float-artist,.music-float .music-float-together { text-overflow:clip; }
 @media(prefers-reduced-motion:reduce) {
@@ -5518,12 +5528,25 @@
 }
 
 /* P4 reference: a stationary pink spectrum with individually breathing radial bars. */
-.listening-spectrum-bar { stroke:#ed89a8;stroke-width:1.15;stroke-linecap:round;transform-box:view-box;transform-origin:0 0;animation:listening-spectrum-breathe var(--spectrum-duration,1.2s) ease-in-out var(--spectrum-delay,0s) infinite; }
+.listening-spectrum { color:#e983a7; filter:drop-shadow(0 0 2px #f3a3bf66); }
+.listening-spectrum-bar { stroke:currentColor;stroke-width:1.35;stroke-linecap:round;transform-box:view-box;transform-origin:0 0;animation:listening-spectrum-breathe var(--spectrum-duration,1.2s) ease-in-out var(--spectrum-delay,0s) infinite,listening-spectrum-tint 5s ease-in-out infinite; }
+@keyframes listening-spectrum-tint { 0%,100% { color:#efa7be; } 50% { color:#e76b9a; } }
+.listening-meeting-clock { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; animation:listening-meeting-clock 24s linear 12s infinite; }
+@keyframes listening-meeting-clock { from { transform:scale(1); } to { transform:scale(1.01); } }
+.listening-global-glow { position:absolute; inset:0; z-index:9999; pointer-events:none; border-radius:inherit; overflow:hidden; }
+/* One continuous handwritten ribbon enters, writes love, and leaves across the screen. */
+.listening-global-glow::before { content:""; position:absolute; inset:0; opacity:0; background:radial-gradient(ellipse at 24% 38%,#f3a9c483,transparent 68%),radial-gradient(ellipse at 80% 62%,#cdb2df70,transparent 66%),linear-gradient(145deg,#f9d7e46b,#edafc780 55%,#f8d5df61); animation:listening-love-blush 3518ms ease-in-out both; }
+.listening-love-line { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.listening-love-line path { stroke-width:2.6; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; stroke-dasharray:1 1; stroke-dashoffset:1; filter:drop-shadow(0 1px 1px #76431e38) drop-shadow(0 0 4px #edc16b50); animation:listening-love-write 3518ms cubic-bezier(.35,0,.3,1) both; }
+@keyframes listening-love-write { 0% { stroke-dashoffset:1; opacity:0; } 5.97% { opacity:1; } 58.5%,64.18% { stroke-dashoffset:0; opacity:1; } 96.42% { opacity:1; } 100% { stroke-dashoffset:-1; opacity:0; } }
+@keyframes listening-love-blush { 0%,100% { opacity:0; } 21.49%,73.74% { opacity:1; } }
+
+@media(prefers-reduced-motion:reduce) { .listening-meeting-clock { display:none; animation:none; } }
 @keyframes listening-spectrum-breathe {
   0%,100% { transform:scaleY(.25); } 20% { transform:scaleY(.82); }
   38% { transform:scaleY(.42); } 58% { transform:scaleY(1); } 78% { transform:scaleY(.35); }
 }
-@media(prefers-color-scheme:dark) { .listening-spectrum-bar { stroke:#f3a4c0; } }
+@media(prefers-color-scheme:dark) { .listening-spectrum { filter:drop-shadow(0 0 2px #f3a4c055); } }
 @media(prefers-reduced-motion:reduce) { .listening-spectrum { display:none; } }
 /* Invitation sleeve: the character response slides the record, never a decorative user toggle. */
 .listening-invite-record { width:248px;padding:15px 16px 0; }
@@ -5566,6 +5589,42 @@
 /* Range selection owns touch dragging so the browser cannot cancel a held lyric. */
 .mp-apple .mp-lyric-seek { touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 .mp-apple .mp-lyrics { scroll-behavior:auto; overscroll-behavior:contain; }
-.mp-apple .mp-lyric-line[data-selected] { opacity:1; }
+.mp-apple .mp-lyric-line[data-selected] { opacity:1; color:var(--c-music-primary, #fa2d55); }
 .mp-apple .mp-lyric-actions { max-height:90%; overflow-y:auto; overscroll-behavior:contain; }
 .mp-apple .mp-lyric-actions article { padding:16px; border-radius:20px; }
+/* Group companions keep the same compact orbit, never one planet per member. */
+.listening-orbit-third { animation:listening-orbit-third 32s linear infinite; }
+.listening-orbit-third .listening-planet { animation:listening-upright-third 32s linear infinite; }
+@keyframes listening-orbit-third { from { transform:rotate(90deg); } to { transform:rotate(450deg); } }
+@keyframes listening-upright-third { from { transform:rotate(-90deg); } to { transform:rotate(-450deg); } }
+.listening-planet-more { position:absolute;right:-2px;bottom:0;z-index:5;display:grid;place-items:center;min-width:22px;height:20px;padding:0 3px;border-radius:12px;background:var(--c-card,#fff);border:1px solid var(--c-card-border,#eee);color:var(--c-text);font-size:9px;font-weight:600; }
+.listening-members { max-height:80%; overflow-y:auto; }
+@media(prefers-reduced-motion:reduce) { .listening-orbit-third { transform:rotate(90deg); }.listening-orbit-third .listening-planet { transform:rotate(-90deg); } }
+
+/* One complementary orbit phase; pause preserves both clocks. */
+@keyframes listening-ring-recede { 0%,50%,70%,100%{opacity:1} 52%,63%{opacity:0} }
+.listening-spectrum{color:var(--listening-cover-color,#d385a4);filter:drop-shadow(0 0 2px color-mix(in srgb,var(--listening-cover-color,#d385a4) 35%,transparent));transition:color .7s ease}
+.listening-spectrum-bar{animation:listening-spectrum-breathe var(--spectrum-duration,1.2s) ease-in-out var(--spectrum-delay,0s) infinite}
+@media(prefers-reduced-motion:reduce){.listening-ring-base{opacity:1!important}.listening-spectrum{transition:none}}
+/* Approved rose-gold join overlay. Shares the existing full-screen layer. */
+.listening-global-glow::before{background:radial-gradient(ellipse at 30% 43%,#e9b0bd99,transparent 72%),radial-gradient(ellipse at 78% 63%,#efc0c78c,transparent 73%),linear-gradient(165deg,#fff3ef70,#f3d0d48c 48%,#fff3ee66)}
+.listening-global-glow::after{content:"";position:absolute;inset:-12%;pointer-events:none;background:radial-gradient(ellipse at 25% 22%,#fff4df66,transparent 48%),radial-gradient(ellipse at 74% 76%,#ffe9e166,transparent 52%);filter:blur(24px);animation:listening-passing-light 3518ms ease-in-out both}
+.listening-love-line{z-index:2}
+.listening-love-line path{stroke-width:2.8;filter:drop-shadow(0 0 2px #fff6e380)}
+.listening-music-motes{position:absolute;inset:0;z-index:3;pointer-events:none}
+.listening-music-motes span{position:absolute;opacity:0;color:#c59291;animation:listening-note-rise 1900ms cubic-bezier(.2,.6,.3,1) var(--note-start) both;filter:drop-shadow(0 0 5px #fff2e780)}
+.listening-music-motes svg{width:var(--note-size);height:var(--note-size);fill:currentColor}
+@keyframes listening-passing-light{0%{opacity:0;transform:translate(-10%,8%) scale(.96)}30%{opacity:.8}65%{opacity:.85}100%{opacity:0;transform:translate(10%,-8%) scale(1.04)}}
+@keyframes listening-note-rise{0%{opacity:0;transform:translate(-6px,20px) rotate(-14deg) scale(.8)}25%{opacity:.65}60%{opacity:.5}100%{opacity:0;transform:translate(12px,-48px) rotate(10deg) scale(1)}}
+@media(prefers-color-scheme:dark){
+ .listening-global-glow::before{background:radial-gradient(ellipse at 30% 43%,#b96f825c,transparent 72%),radial-gradient(ellipse at 78% 63%,#b8787e52,transparent 73%),linear-gradient(165deg,#3923294d,#6c3e4d66 48%,#3a28294d)}
+ .listening-global-glow::after{background:radial-gradient(ellipse at 25% 22%,#f2c5a426,transparent 48%),radial-gradient(ellipse at 74% 76%,#eeb4a72b,transparent 52%)}
+ .listening-love-line stop{stop-color:#f4d5bc}
+ .listening-love-line stop:nth-child(2),.listening-love-line stop:nth-child(5){stop-color:#ffe6ce}
+ .listening-love-line stop:nth-child(4){stop-color:#fff5df}
+ .listening-love-line stop:last-child{stop-color:#f5d9cf}
+ .listening-love-line path{stroke-width:2.9;filter:drop-shadow(0 0 2px #ffe6d466) drop-shadow(0 0 7px #efb6cb45)}
+ .listening-music-motes span{color:#ebcfcc}
+}
+@media(prefers-reduced-motion:reduce){.listening-music-motes{display:none}.listening-global-glow::after{animation-name:listening-love-blush;filter:none}.listening-love-line path{animation-name:listening-love-still;stroke-dashoffset:0}}
+@keyframes listening-love-still{0%,100%{opacity:0}20%,75%{opacity:1}}

@@ -1,0 +1,36 @@
+.fishDialog {
+    color-scheme: light dark;
+    background: color-mix(in srgb, var(--c-panel) 88%, transparent);
+    backdrop-filter: blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+}
+
+.fishDialog :global(.ui-select):focus-visible,
+.fishDialog button:focus-visible {
+    outline: 2px solid var(--c-icon-active);
+    outline-offset: 2px;
+}
+
+.fishInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--c-panel-border);
+    border-radius: 18px;
+    background: var(--c-card);
+}
+
+@media (prefers-color-scheme: dark) {
+    .fishDialog {
+        --c-panel: #202024;
+        --c-panel-border: #ffffff24;
+        --c-card: #ffffff08;
+        --c-text-title: #f5f5f7;
+        --c-text: #b0b0b8;
+        --c-icon: #9a9aa5;
+        --c-icon-active: #80b6ff;
+        --c-input: #ffffff12;
+        --c-input-border: #ffffff16;
+    }
+}

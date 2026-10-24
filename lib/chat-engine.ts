@@ -1,6 +1,9 @@
 import { matchesPromptScope } from "./preset-scope";
 import { lifePrompt, lifeScope, applyLifeOutput, createLifeStreamFilter } from "./user-portrait-context";
+import { CHAT_FORWARD_PROTOCOL, refreshChatForwardProtocol } from "./chat-forward-protocol";
+import { isListeningTool, selectChatRequestTools, listeningCapabilityPrompt } from "./listening-capability";
 import { registerIdentityRequest } from "./identity-runtime";
+import { pendingListeningInvite, listeningInviteFirstInstruction, createListeningInviteStreamObserver } from "./listening-invite-fast";
 // lib/chat-engine.ts
 
 import { createSseJsonParser } from "./sse-json";
@@ -906,6 +909,8 @@ export async function sendLLMStreamRequest(
         skipOutputRegex?: boolean;
         /** 不剥幻觉时间戳：流式增量原样直出（不扣尾巴），落库文本与流出的一字不差 */
         skipTimestampStrip?: boolean;
+        /** Invitation consent must not wait behind the 64-character preview tail. Final output is still cleaned. */
+        immediateContent?: boolean;
         includeReasoning?: boolean;
         appId?: string;
         appTags?: string[];
@@ -954,7 +959,7 @@ export async function sendLLMStreamRequest(
                 await (pluginCallbacks ?? callbacks)?.onReasoningDelta?.(text);
             },
         };
-        const { content: streamedContent, rawResponse } = await readSseStream(response, request.providerKind, streamLogCallbacks, !options?.skipTimestampStrip);
+        const { content: streamedContent, rawResponse } = await readSseStream(response, request.providerKind, streamLogCallbacks, !options?.skipTimestampStrip && !options?.immediateContent);
         const streamTail = lifeStream?.flush();
         if (streamTail) await originalOnDelta?.(streamTail);
         if (!streamedContent.trim()) {
@@ -1910,6 +1915,7 @@ export async function buildChatPromptMessages(
     regexes: RegexConfig[];
     userIdentity: ReturnType<typeof resolveUserIdentity>;
     toolsEnabled: boolean;
+    enabledTools: EnabledTool[];
 }> {
     const chars = loadCharacters();
     const character = chars.find(c => c.id === session.contactId);
@@ -1924,8 +1930,11 @@ export async function buildChatPromptMessages(
     }
 
     const apiConfigs = loadApiConfigs();
-    const config = apiConfigs.find(c => c.id === activeSlot.apiConfigId);
-    if (!config) throw new ChatEngineError(`API Configuration not found for ${character.name}.`);
+    const boundConfig = apiConfigs.find(c => c.id === activeSlot.apiConfigId);
+    if (!boundConfig) throw new ChatEngineError(`API Configuration not found for ${character.name}.`);
+    const fastInvite = resolvedAppId === "chat" && !options?.appTags?.includes("offline") && !options?.promptProfile
+        ? pendingListeningInvite(session, history) : null;
+    const config = fastInvite ? { ...boundConfig, enableImageRecognition: false } : boundConfig;
 
     const presets = loadPresets();
     let preset = activeSlot.presetId ? presets.find(p => p.id === activeSlot.presetId) || null : null;
@@ -1972,10 +1981,10 @@ export async function buildChatPromptMessages(
     const memConfig = loadMemoryConfig();
     const isOfflineMode = options?.appTags?.includes("offline") === true;
     const effectiveAppTags = mergeAppTags(options?.appTags, promptProfile?.appTags, resolvedAppId);
-    const toolsAllowed = options?.toolsAllowed !== false && !isOfflineMode;
-    const enabledTools = toolsAllowed ? getEnabledTools(resolvedAppId) : [];
-    const toolsEnabled = enabledTools.length > 0
-        && (options?.forceEnableTools === true || presetIncludesToolsMacro(preset, resolvedAppId, effectiveAppTags));
+    const toolsAllowed = options?.toolsAllowed !== false && !isOfflineMode && !fastInvite;
+    const configuredToolsEnabled = options?.forceEnableTools === true || presetIncludesToolsMacro(preset, resolvedAppId, effectiveAppTags);
+    const enabledTools = toolsAllowed ? selectChatRequestTools(getEnabledTools(resolvedAppId), configuredToolsEnabled) : [];
+    const toolsEnabled = enabledTools.length > 0;
     const usesNativeActions = Boolean(toolsEnabled && nativeToolProtocolForConfig(config));
     const { recentBlocks, truncatedHistory, wbActivationContext, unifiedRecentItems } = prepareShortTermContext(character.id, resolvedAppId, {
         history: historyForPrompt,
@@ -1997,7 +2006,7 @@ export async function buildChatPromptMessages(
 
     const avatarInstruction = buildAvatarActionPrompt(session.id, character.id, history, promptHistory, config.enableImageRecognition === true && !isOfflineMode);
     const [memResults, coreResults, musicLocal, musicCloud] = await Promise.all([
-        retrieveMemoriesForPrompt(character.id, wbActivationContext, memConfig).catch(() => null),
+        retrieveMemoriesForPrompt(character.id, wbActivationContext, fastInvite ? { ...memConfig, vectorRecallEnabled: false } : memConfig).catch(() => null),
         retrieveCoreMemoriesForPrompt(character.id, memConfig).catch(() => null),
         buildMusicLocalMacro(),
         buildMusicCloudMacro(),
@@ -2074,6 +2083,12 @@ export async function buildChatPromptMessages(
         offlineSummaryTag: preset?.story_summary_tag?.trim() || "summary",
         nativeToolHistory: usesNativeActions,
     });
+    if (enabledTools.some(tool=>tool.name==="转发聊天记录")) refreshChatForwardProtocol(llmMessages);
+    if (resolvedAppId === "chat" && !isOfflineMode) {
+        const listeningTools = listeningCapabilityPrompt(enabledTools, usesNativeActions, false, llmMessages, { sessionId: session.id, characterIds: [character.id] });
+        if (listeningTools) llmMessages.push({ role: "system", content: listeningTools, _debugMeta: { marker: "listening_capability" } });
+    }
+    if (resolvedAppId === "chat" && enabledTools.some(tool=>tool.name==="转发聊天记录") && !isOfflineMode && !llmMessages.some(message=>typeof message.content==="string" && message.content.includes("<chatForwarding>"))) llmMessages.push({role:"system",content:CHAT_FORWARD_PROTOCOL});
     if (resolvedAppId === "chat" && !isOfflineMode) {
         await appendCurrentAvatarContext(llmMessages, buildCurrentAvatarSnapshot({
             sessionId: session.id,
@@ -2114,7 +2129,8 @@ export async function buildChatPromptMessages(
             if (portrait) llmMessages.push({ role: "user", content: [{ type: "text", text: "[图片ID:user-portrait] 用户本人肖像参考；不是新聊天图片。请在 float_state.photos 中记录客观外貌描述，id 填 user-portrait。结合文字设定辨认，无法确定合照人物时询问。" }, { type: "image_url", image_url: { url: portrait, detail: "low" } }] });
         }
     }
-    return { llmMessages, character, config, preset, regexes, userIdentity, toolsEnabled };
+    if (fastInvite) llmMessages.push({ role: "system", content: listeningInviteFirstInstruction(fastInvite) });
+    return { llmMessages, character, config, preset, regexes, userIdentity, toolsEnabled, enabledTools };
 }
 
 export type ChatCompletionCallbacks = {
@@ -2272,10 +2288,11 @@ async function generateNativeChatCompletion(
         options?: ChatPromptBuildOptions & { signal?: AbortSignal };
         callbacks?: ChatCompletionCallbacks;
         bailoutRef: ReplyBailoutRef;
+        enabledTools: EnabledTool[];
     },
 ): Promise<ChatCompletionResult> {
     const { session, llmMessages, character, config, preset, regexes, userIdentity, options, callbacks, bailoutRef } = params;
-    const enabledTools = getEnabledTools(options?.appId ?? "chat");
+    const enabledTools = params.enabledTools;
     const requestAppTags = mergeAppTags(options?.appTags, options?.promptProfile?.appTags, options?.appId ?? "chat");
     const persistedSession = loadChatSessions().find(item => item.id === session.id);
     let expandedSourceIds = normalizeNativeExpandedToolSourceIds(
@@ -2654,6 +2671,10 @@ export async function generateChatCompletion(
     options?: ChatPromptBuildOptions & { signal?: AbortSignal },
     callbacks?: ChatCompletionCallbacks,
 ): Promise<ChatCompletionResult> {
+    const invitation = !options?.appTags?.includes("offline") && !options?.promptProfile && (!options?.appId || options.appId === "chat")
+        ? pendingListeningInvite(session, history) : null;
+    // Transient override: consent must be observable before the rest of the answer.
+    if (invitation) session = { ...session, streamOnline: true };
     // 发送兜底（离线推送）：生成期间在服务端挂一张带心跳租约的保险单，
     // 本地完成即撤销；App 被杀则心跳停跳，服务端接管生成并推送。
     const bailoutRef: ReplyBailoutRef = {
@@ -2686,7 +2707,18 @@ async function generateChatCompletionCore(
     callbacks: ChatCompletionCallbacks | undefined,
     bailoutRef: ReplyBailoutRef,
 ): Promise<ChatCompletionResult> {
-    const { llmMessages, character, config, preset, regexes, userIdentity, toolsEnabled } = await buildChatPromptMessages(session, history, options);
+    const inviteStartedAt = Date.now();
+    const invitation = !options?.appTags?.includes("offline") && !options?.promptProfile && (!options?.appId || options.appId === "chat")
+        ? pendingListeningInvite(session, history) : null;
+    const { llmMessages, character, config, preset, regexes, userIdentity, toolsEnabled, enabledTools } = await buildChatPromptMessages(session, history, options);
+    if (invitation) {
+        const observer = createListeningInviteStreamObserver(invitation, { signal: options?.signal, thinkingTags: [preset?.online_thinking_tag || "thinking"], startedAt: inviteStartedAt });
+        const original = callbacks;
+        callbacks = { ...original, onStreamDelta: delta => {
+            observer.push(delta);
+            return original?.onStreamDelta?.(delta);
+        } };
+    }
     const requestAppTags = mergeAppTags(options?.appTags, options?.promptProfile?.appTags, options?.appId ?? "chat");
 
     // 追问有自己的排期时兜底（followup:key），这里只为普通回复生成挂单。
@@ -2733,7 +2765,7 @@ async function generateChatCompletionCore(
         }).catch(() => undefined);
     }
 
-    if (toolsEnabled && nativeToolProtocolForConfig(config) && getEnabledTools(options?.appId ?? "chat").length > 0) {
+    if (toolsEnabled && nativeToolProtocolForConfig(config) && enabledTools.length > 0) {
         return generateNativeChatCompletion({
             session,
             llmMessages,
@@ -2745,6 +2777,7 @@ async function generateChatCompletionCore(
             options,
             callbacks,
             bailoutRef,
+            enabledTools,
         });
     }
 
@@ -2772,6 +2805,7 @@ async function generateChatCompletionCore(
                     followUpCount: options?.followUpCount,
                     debugSessionId: session.id,
                     signal: options?.signal,
+                    immediateContent: Boolean(invitation),
                 }, {
                     onDelta: (text) => callbacks?.onStreamDelta?.(text),
                     // 流式下 onReasoningDelta 是单段增量：累积后再喂 onReasoning（保持整段请求语义）
@@ -2822,8 +2856,10 @@ async function generateChatCompletionCore(
         }
 
         // Check for [获取指令:xxx] and [执行动作:xxx({...})]
-        const toolFetches = toolsEnabled ? parseToolFetches(afterActionStrip) : [];
-        const { toolCalls } = toolsEnabled ? parseToolCalls(afterActionStrip) : { toolCalls: [] };
+        const listeningOnly = enabledTools.length > 0 && enabledTools.every(isListeningTool);
+        const allowedTool = (name: string) => !listeningOnly || enabledTools.some(tool => tool.name === name);
+        const toolFetches = toolsEnabled ? parseToolFetches(afterActionStrip).filter(fetch => allowedTool(fetch.name)) : [];
+        const toolCalls = toolsEnabled ? parseToolCalls(afterActionStrip).toolCalls.filter(call => allowedTool(call.name)) : [];
         const assistantForToolContext = stripStateAndInnerForPrompt(filteredOutput);
 
         // No tool activity — final round
@@ -3169,9 +3205,8 @@ export async function previewPromptRequestSnapshot(
         effectiveHistory = annotated;
     }
 
-    const { llmMessages, character, config, preset, userIdentity, toolsEnabled } = await buildChatPromptMessages(session, effectiveHistory, options);
+    const { llmMessages, character, config, preset, userIdentity, enabledTools } = await buildChatPromptMessages(session, effectiveHistory, options);
     const requestMessages = toLlmRequestMessages(llmMessages);
-    const enabledTools = toolsEnabled ? getEnabledTools(options?.appId ?? "chat") : [];
     const meta = { characterName: character.name, userName: userIdentity?.name };
 
     if (nativeToolProtocolForConfig(config) && enabledTools.length > 0) {

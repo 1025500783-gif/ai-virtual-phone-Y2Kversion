@@ -1,0 +1,27 @@
+const assert=require('assert/strict');
+const {chromium,webkit}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+async function launch(engine='chromium') {return engine==='webkit'?webkit.launch({headless:true}):chromium.launch({headless:true,...(process.env.CHAT_TEST_BROWSER?{executablePath:process.env.CHAT_TEST_BROWSER}:{})});}
+async function setup(browser,base,{messages=8,onModel}={}) {
+ const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,deviceScaleFactor:2,serviceWorkers:'block'}),page=await context.newPage();page.setDefaultTimeout(20000);
+ await context.addCookies([{name:'pwa_display_mode',value:'standalone',url:base}]);
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addLocatorHandler(page.getByRole('button',{name:'关闭更新卡片',exact:true}),async()=>page.getByRole('button',{name:'关闭更新卡片',exact:true}).click());
+ await page.route('**/*',r=>{const u=new URL(r.request().url());if(u.origin===base&&u.pathname==='/api/auth/me')return r.fulfill({json:{ok:true,account:{id:'bilingual-qa',username:'bilingual-qa',displayName:'Bilingual QA',status:'active'}}});if((u.hostname==='public-qa.invalid'||u.pathname==='/api/llm-proxy')&&onModel)return onModel(r);return u.origin===base&&!u.pathname.startsWith('/api/')?r.continue({headers:{...r.request().headers(),'accept-encoding':'identity'}}):r.abort();});
+ const enter=async()=>{await page.locator('.splash-enter-button-show, .phone-shell:not(.splash-phone-screen)').first().waitFor({state:'visible',timeout:60000});if(await page.locator('.splash-enter-button-show').isVisible())await page.locator('.splash-enter-button-show').click();for(let i=0;i<4;i++){await page.waitForTimeout(220);for(const selector of ['.offline-push-revamp-notice button','button[aria-label="关闭更新卡片"]']){const buttons=page.locator(selector);if(await buttons.count())await buttons.last().click();}}};
+ const app=async appId=>{await page.evaluate(appId=>dispatchEvent(new CustomEvent('open-app',{detail:{appId}})),appId);await page.locator(`.phone-shell[data-active-app="${appId}"]`).waitFor();};
+ await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});await enter();await app('chat');await page.locator('.chat-app:visible').first().waitFor();
+ await page.evaluate(async count=>{
+  const open=name=>new Promise((resolve,reject)=>{const r=indexedDB.open(name);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  const all=await indexedDB.databases(),chatName=all.find(d=>d.name.includes('AiPhoneChatDB')).name,db=await open(chatName),kv=await open('AiPhoneKvDB');
+  const entries=await new Promise(resolve=>{const r=kv.transaction('entries').objectStore('entries').getAll();r.onsuccess=()=>resolve(r.result);});
+  const chars=entries.find(r=>r.key==='ai_phone_characters_v1'||r.key.endsWith(':ai_phone_characters_v1'));
+  const char={id:'public-qa-char',name:'晴',persona:'合成晴',avatar:'',createdAt:'2026-01-01T00:00:00.000Z',updatedAt:'2026-01-01T00:00:00.000Z'};
+  const bindings=entries.find(r=>r.key.endsWith('ai_phone_bindings_v1'));const settings=entries.find(r=>r.key.endsWith('ai_phone_chat_settings_v1'));
+  await new Promise((resolve,reject)=>{const tx=kv.transaction('entries','readwrite'),s=tx.objectStore('entries');s.put({key:chars?.key||'ai_phone_characters_v1',value:JSON.stringify([char])});s.put({key:'ai_phone_api_configs_v1',value:JSON.stringify([{id:'public-qa-api',name:'合成接口',provider:'OpenAI',apiKey:'synthetic-not-a-secret',baseUrl:'https://public-qa.invalid/v1',defaultModel:'fixture',enableImageRecognition:false,enableImageGeneration:false}])});s.put({key:bindings?.key||'ai_phone_bindings_v1',value:JSON.stringify({globalDefaults:{apiConfigId:'public-qa-api'},appDefaults:{},characterBindings:[]})});s.put({key:settings?.key||'ai_phone_chat_settings_v1',value:JSON.stringify({timeAware:false,enterToSendEnabled:true})});s.put({key:'ai_phone_follow_up_config_v1',value:JSON.stringify({enabled:false})});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+  await new Promise((resolve,reject)=>{const tx=db.transaction(['messages','sessions','contacts'],'readwrite');tx.objectStore('sessions').put({id:'public-qa-session',contactId:char.id,unreadCount:0,updatedAt:'2026-01-01T00:00:00.000Z',isPinned:false});tx.objectStore('contacts').put({id:'public-qa-contact',characterId:char.id,nickname:char.name,addedAt:char.createdAt});for(let i=0;i<count;i++)tx.objectStore('messages').put({id:'qa-msg-'+i,sessionId:'public-qa-session',role:i%2?'assistant':'user',content:i===count-1?'原始验收回复':'合成历史记录'+i+'，'+('测试文字。'.repeat(15)),createdAt:new Date(1700000000000+i*1000).toISOString(),status:'read'});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();kv.close();
+ },messages);
+ await page.reload({waitUntil:'domcontentloaded'});await enter();
+ const openChat=async()=>{await app('chat');await page.locator('.chat-app:visible .imessage-session-list .minimal-list-item').filter({hasText:'晴'}).first().click();await page.locator('.chat-room-layer:visible .chat-input-textarea').waitFor();};
+ return {context,page,errors,app,enter,openChat,assertClean:()=>assert.deepEqual(errors,[])};
+}
+module.exports={launch,setup};

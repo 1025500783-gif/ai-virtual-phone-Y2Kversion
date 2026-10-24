@@ -7,7 +7,9 @@
 .invitation { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 18px; background: color-mix(in srgb, #fa3658 7%, var(--c-page-body-bg, #fff)); }
 .invitation img, .avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 .avatar { display: grid; place-items: center; background: color-mix(in srgb, #fa3658 12%, transparent); color: #fa3658; }
-.invitation > span:not(.avatar) { flex: 1; min-width: 0; }
+.invitationCopy { flex: 1; min-width: 0; }
+.invitation :global(.listening-duet) { flex: 0 0 59px; }
+.invitation :global(.listening-duet-photo img) { width: 100%; height: 100%; }
 .invitation strong, .song strong, .playlist strong { display: block; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .invitation small, .song small, .playlist small { display: block; margin-top: 3px; font-size: 12px; opacity: .6; }
 .invitation button { border: 0; background: transparent; color: #ee3153; min-width: 44px; min-height: 44px; font-size: 13px; font-weight: 600; }

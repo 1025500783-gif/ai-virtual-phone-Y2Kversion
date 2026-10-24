@@ -1,3 +1,7 @@
+import { CHAT_FORWARD_TOOL_DEFINITIONS } from "./chat-forward-protocol";
+import { executeChatForwardAction } from "./chat-forward-actions";
+import { executeListeningAction } from "./listening-tool-actions";
+import { LISTENING_TOOL_DEFINITIONS } from "./listening-tool-definitions";
 import { identityLocalStorage, identityIndexedDbFactory, physicalIdentityKey, assertIdentityActive } from "@/lib/identity-runtime";
 import type {
     CompositeToolConfig,
@@ -785,6 +789,7 @@ async function executeCompositeTool(
 }
 
 function normalizeInternalToolResult(result: ToolResult): ToolResult {
+    if ([...LISTENING_TOOL_DEFINITIONS,...CHAT_FORWARD_TOOL_DEFINITIONS].some(tool => tool.name === result.name)) return result;
     return {
         ...result,
         continueConversation: true,
@@ -793,6 +798,14 @@ function normalizeInternalToolResult(result: ToolResult): ToolResult {
 }
 
 async function executeInternalTool(call: ToolCall, context?: ToolExecutionContext): Promise<ToolResult | null> {
+    if (CHAT_FORWARD_TOOL_DEFINITIONS.some(tool=>tool.name===call.name)) {
+        try { return {name:call.name,success:true,data:JSON.stringify(await executeChatForwardAction(call.name,call.args,context||{})),continueConversation:true,persistToHistory:false}; }
+        catch(error) { return {name:call.name,success:false,error:error instanceof Error?error.message:String(error),continueConversation:true,persistToHistory:false}; }
+    }
+    if (LISTENING_TOOL_DEFINITIONS.some(tool => tool.name === call.name)) {
+        try { return { name: call.name, success: true, data: JSON.stringify(await executeListeningAction(call.name, call.args, context || {})), continueConversation: true, persistToHistory: false }; }
+        catch (error) { return { name: call.name, success: false, error: error instanceof Error ? error.message : String(error), continueConversation: true, persistToHistory: false }; }
+    }
     if (isNoteWallToolName(call.name)) return executeNoteWallTool(call, context);
     if (isMusicControlToolName(call.name)) return executeMusicControlTool(call, context);
     if (isCalendarToolName(call.name)) return executeCalendarTool(call, context);

@@ -6,6 +6,8 @@ export type MomentPost = {
     authorType: "user" | "character";
     authorId: string;               // characterId or "user"
     content: string;
+    chatScreenshot?: { version: 1; perspective: import("./chat-screenshot-view").ScreenshotPerspective; width: number; height: number };
+    forwardedChat?: import("./chat-forward-types").ForwardedChat;
     musicLyricShare?: { title: string; artist: string; text: string; coverUrl?: string; caption?: string };
     contentTranslation?: string;
     contentTranslationSource?: string;

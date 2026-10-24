@@ -174,6 +174,7 @@ export type ChatMessage = {
         | "xiaohongshu_note_share"
         | "gift"
         | "contact_card"
+        | "forwarded_chat"
         | "app_card"
         | "tool_notice"
         | "tool_call"
@@ -187,6 +188,8 @@ export type ChatMessage = {
     origin?: "chat" | "reading_discuss" | "custom_app" | "custom_app_background";
     mediaUrl?: string;
     mediaData?: {
+        visionDescription?: string;
+        forwardedChat?: import("./chat-forward-types").ForwardedChat;
         listeningInvite?: { roomId: string; initiator?: "user" | "character"; response?: "accepted" | "declined"; title?: string; artist?: string; coverUrl?: string };
         screenEffect?: "echo" | "love" | "fireworks";
         screenEffectScene?: { imageRef:string; effect:"echo"|"love"|"fireworks"; phase:number; capturedAt:string; partial:boolean };
@@ -435,6 +438,7 @@ export const CHAT_RESPONSE_BATCH_REPLACED_EVENT = "chat-response-batch-replaced"
 
 // ── Media Preview Map ─────────────────────────
 const MEDIA_PREVIEW_MAP: Record<string, string> = {
+    forwarded_chat: "[聊天记录]",
     image: "[图片]", audio: "[语音]", video: "[视频]",
     red_packet: "[红包]", transfer: "[转账]", location: "[位置]",
     poke: "[拍了拍你]", sticker: "[表情]", quote: "[引用]", dice: "[掷骰子]",

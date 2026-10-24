@@ -2807,7 +2807,7 @@
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-input-bar[data-show-send] .chat-send-btn,
-.chat-room-wrapper[data-imessage-private] .chat-input-bar:focus-within .chat-send-btn {
+.chat-room-wrapper[data-imessage-private] .chat-input-bar:focus-within:not(:has(.chat-voice-message-btn:focus)) .chat-send-btn {
   display: grid !important;
 }
 
@@ -2834,7 +2834,7 @@
 }
 
 .chat-room-wrapper[data-imessage-private] .chat-input-bar[data-show-send] .chat-voice-message-btn,
-.chat-room-wrapper[data-imessage-private] .chat-input-bar:focus-within .chat-voice-message-btn {
+.chat-room-wrapper[data-imessage-private] .chat-input-bar:focus-within:not(:has(.chat-voice-message-btn:focus)) .chat-voice-message-btn {
   display: none !important;
 }
 

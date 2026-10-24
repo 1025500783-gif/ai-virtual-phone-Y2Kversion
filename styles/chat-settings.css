@@ -27,7 +27,7 @@
 .imessage-settings-page .page-header::before,.imessage-settings-page .page-header::after { content:none !important; }
 .imessage-settings-page > .page-header { pointer-events:none; }
 .imessage-settings-page > .page-header .page-back-btn { pointer-events:auto; }
-.imessage-settings-page > .page-body { padding-top:calc(var(--page-header-safe-top,48px) - 2px); }
+.imessage-settings-page > .page-body { padding-top:calc(var(--page-header-safe-top,48px) + 8px); }
 .chat-status-subpage { position:absolute; inset:0; z-index:10030; background:var(--settings-bg); }
 /* Subpages scroll as one surface: no fixed slab hiding previews or editors. */
 .imessage-settings-page .page-shell { overflow-y:auto; scrollbar-width:none; background:var(--settings-bg); }

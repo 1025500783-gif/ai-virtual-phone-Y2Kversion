@@ -1,0 +1,17 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict'),ts=require('typescript');
+const box={exports:{},Date};vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/listening-motion.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,box);
+const {listeningEntryTiming:timing,LISTENING_GLOW_MS:glow,LISTENING_APPROACH_MS:approach}=box.exports;
+assert.equal(glow,3518);assert.equal(approach,1800);
+assert.equal(timing(false,1000,2000).ready,false);
+assert.equal(timing(true,undefined,2000).ready,false);
+assert.equal(timing(true,1000,1000).delayMs,3518);
+assert.equal(timing(true,1000,3000).delayMs,1518,'navigation during glow waits only the remainder');
+assert.equal(timing(true,1000,4518).delayMs,0,'page entry starts at exact overlay completion');
+assert.equal(timing(true,1000,5000).delayMs,-482,'navigation during approach resumes, never restarts');
+assert.equal(timing(true,1000,6318).animate,false,'completed room does not replay on remount');
+assert.equal(timing(true,8000,8000).animate,true,'new join starts a new sequence');
+assert.equal(timing(true,1000,900).delayMs,3518,'clock skew clamps elapsed to zero');
+const css=fs.readFileSync('components/music/listening-library.module.css','utf8');
+const additions=css.slice(css.indexOf('/* Approved motion only:'));
+assert(!/(?:^|[;{])\s*(?:width|height|padding|margin|position)\s*:/.test(additions),'motion CSS must not alter UI layout dimensions');
+console.log('PASS: waiting, synchronized phases, navigation resume, finished/new join, clock skew, layout dimensions unchanged');

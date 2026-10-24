@@ -1,7 +1,7 @@
 // Isolated prompt and actual rich-message parsing; no model, TTS, or user storage.
 const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict');
 let provider='ElevenLabs',model='eleven_v4';
-function load(file,deps){const out={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:out,URL,Intl,require:name=>deps[name]||{},console});return out;}
+function load(file,deps){const out={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:out,URL,Intl,require:name=>name.startsWith('./voice-guides/')?load('lib/'+name.slice(2)+'.ts',{}):deps[name]||{},console});return out;}
 const voice=load('lib/voice-expression.ts',{'./settings-storage':{loadBindingConfig:()=>({}),loadVoiceConfigs:()=>[{id:'vc',provider,model}],resolveBinding:(_b,id)=>({voiceConfigId:id==='char'?'vc':undefined})}});
 const configuredGuidance = voice.VOICE_EXPRESSION_GUIDANCE_ENABLED;
 if (!configuredGuidance) {
@@ -18,8 +18,6 @@ assert.doesNotMatch(instruction,/官方|保证|免责声明|导演指令/);
 assert.match(instruction,/统一决定回复内容、说话方式及现场声音/);
 assert.match(instruction,/不按最新一句的关键词重置情绪/);
 assert.match(instruction,/可以骤变/);assert.match(instruction,/无需每轮添加/);
-assert.match(instruction,/参考非穷举/);
-for(const cue of ['low, gravelly voice','rushed','gasps','sings','door creaking','French accent','whispering, playful','starting calm, then losing patience']) assert.ok(instruction.includes(cue), `open voice reference: ${cue}`);
 assert.doesNotMatch(instruction,/每句通常0—2|不标肢体动作或环境音|只添加声音标记/);
 for (const cue of ['happy','excited','warmly','angry','annoyed','sarcastic','sad','crying','curious','thoughtful','surprised','appalled','mischievously','soft, affectionate tone','gentle, reassuring tone','weary, resigned tone','fondly exasperated tone','playful, teasing tone','controlled, restrained anger','cool, detached tone','soft, hurt tone','anxious tone','hesitant tone','calm, firm tone','chuckles','laughs','sighs','exhales','inhales deeply','clears throat','whispers','shouting','short pause','long pause']) assert.ok(instruction.includes(cue), `retained reference: ${cue}`);
 for(const direction of ['soft, composed, fondly teasing tone, gently falling intonation','bright, sincere, warmly teasing tone, gently rising intonation']) {
@@ -27,6 +25,7 @@ for(const direction of ['soft, composed, fondly teasing tone, gently falling int
  assert.equal(voice.voiceSpeechText(`{voice:${direction}} 来啦？`),`[${direction}] 来啦？`);
 }
 assert.match(voice.voiceExpressionInstruction(['char'],true),/当前为通话/);
+assert.doesNotMatch(instruction,/Fish Audio|chuckling|long-break/);
 assert.equal(voice.voiceExpressionInstruction(['other']),'');
 provider='Minimax';assert.equal(voice.voiceExpressionInstruction(['char']),'');provider='ElevenLabs';model='eleven_multilingual_v2';assert.equal(voice.voiceExpressionInstruction(['char']),'');model='eleven_v4_turbo';assert.ok(voice.voiceExpressionInstruction(['char']));
 const parser=load('lib/rich-message-parser.ts',{'./voice-expression':voice,'./state-value-parser':{parseStateValues:text=>({cleanText:text,stateValues:[]}),mergeStateValues:()=>[]},'./action-parser':{stripActionShells:text=>text},'./text-tool-protocol':{stripTextToolDirectives:text=>text},'./custom-app-chat-directives':{loadCustomAppChatDirectives:()=>[]},'./chat-echo':{canUseEcho:()=>false},'./image-grid-split':{isImageGridCount:()=>false}});

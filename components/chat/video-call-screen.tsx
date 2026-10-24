@@ -422,7 +422,12 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
                         await promise;
                         audioAbortRef.current = null;
                     }
-                } catch (e) { console.warn("[VideoCall] TTS failed:", e); }
+                } catch (e) {
+                    console.warn("[VideoCall] TTS failed:", e);
+                    if (voiceConfig.provider === "FishAudio" && stateRef.current !== "ENDED") setSubtitles(prev => [...prev, {
+                        id: `tts-err-${Date.now()}`, role: "assistant", text: `⚠️ ${e instanceof Error ? e.message : "Fish Audio 语音合成失败"}`,
+                    }]);
+                }
             }
 
             if (stateRef.current !== "ENDED") setCallState("IDLE");

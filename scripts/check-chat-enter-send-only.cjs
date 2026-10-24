@@ -33,6 +33,8 @@ function fixture(overrides = {}) {
         canUseFireworks: () => false, canUseEcho: () => false, canUseLove: () => false,
         isDiceOnlyMessage: () => false, quotePhoto: undefined, quoteData: undefined,
         listeningContext: null, sentAt: '2026-10-06T00:00:00.000Z',
+        loadChatSessions: () => [], resolveGroupMentions: () => ({}), groupCharMap: new Map(),
+        isKeyboardAutoSendEnabled: () => false,
         pushChatMessage: message => message,
         setMessages: update => { calls.messages = update(calls.messages); },
         hasEcho: () => false, hasLove: () => false, hasFireworks: () => false,
@@ -52,7 +54,7 @@ for (const event of [{}, { ctrlKey: true }, { metaKey: true }]) {
         assert.equal(f.calls.messages[0].content, 'message');
         assert.equal(f.context.inputText, '');
         assert.equal(f.calls.ai, 0, 'Enter must not request a model reply');
-        assert.equal(f.calls.pending, false, 'Enter must not arm idle/keyboard-dismiss generation');
+        assert.equal(f.calls.pending, true, 'Published bubbles are eligible for opt-in idle reply');
     }
 }
 for (const override of [{ inputLocked: true }, { isGenerating: true }, { inputText: '' }, { inputText: '   ' }]) {
@@ -68,7 +70,9 @@ const button = fixture(); button.context.handleSubmit(); assert.equal(button.cal
 const emptyButton = fixture({ inputText: '' }); emptyButton.context.handleSubmit(); assert.equal(emptyButton.calls.ai, 1);
 const stop = fixture({ isGenerating: true }); stop.context.handleSubmit(); assert.equal(stop.calls.stops, 1);
 const director = fixture({ isGroup: true, isSpectator: true, inputLocked: true }); director.press(); assert.deepEqual(director.calls.director, ['message']);
-console.log('PASS: real Enter/draft/publish callbacks send only in private/group chats; no immediate or idle reply, no accidental stop; modifiers/IME/mentions, reply button and director behavior preserved. No real storage/model calls.');
+const idleButton = fixture({ isKeyboardAutoSendEnabled: () => true }); idleButton.context.handleSubmit();
+assert.equal(idleButton.calls.ai, 1); assert.equal(idleButton.calls.pending, true);
+console.log('PASS: Enter sends without immediate reply; opt-in idle reply can follow. Explicit send-and-reply is immediate even when enabled; manual empty reply/stop, modifiers/IME/mentions and director behavior preserved. No real storage/model calls.');
 
 if (process.env.CHAT_ENTER_REAL_UI === '1') {
     (async () => {
@@ -92,7 +96,7 @@ if (process.env.CHAT_ENTER_REAL_UI === '1') {
                 localStorage.setItem('enter_fixture_ready', '1');
                 localStorage.setItem('float_identity_runtime_v1', JSON.stringify({ version: 1, activeUserId: 'keyboard-fixture', legacyOwnerId: 'keyboard-fixture', userIds: ['keyboard-fixture'], deletingUserIds: [], revision: 0 }));
                 localStorage.setItem('ai_phone_chat_settings_v1', JSON.stringify({ enterToSendEnabled: true }));
-                localStorage.setItem('float_keyboard_auto_send_v1', JSON.stringify({ sessionEnabled: { dev_imessage26_private: true }, sessionDebounceMs: { dev_imessage26_private: 0 } }));
+                localStorage.setItem('float_keyboard_auto_send_v1', JSON.stringify({ sessionEnabled: {}, sessionDebounceMs: {} }));
             });
             await page.goto('http://127.0.0.1:3003/dev/imessage26', { waitUntil: 'domcontentloaded', timeout: 120000 });
             const input = page.locator('.chat-input-textarea');
@@ -105,7 +109,7 @@ if (process.env.CHAT_ENTER_REAL_UI === '1') {
             assert.equal(await rows.count(), count + 1);
             const requestsBeforeBlur = requests.length;
             await input.blur();
-            // Wait beyond the enabled zero-delay keyboard-dismiss timer.
+            // With idle reply off, sending and blurring must not request a reply.
             await page.waitForTimeout(500);
             assert.equal(requests.length, requestsBeforeBlur);
             assert.equal(await page.locator('.chat-send-btn[data-generating]').count(), 0);
@@ -117,7 +121,7 @@ if (process.env.CHAT_ENTER_REAL_UI === '1') {
             const emptyCount = await rows.count(); await input.press('Enter');
             assert.equal(await rows.count(), emptyCount);
             assert.deepEqual(errors, []);
-            console.log('PASS: actual 3003 ChatRoom Enter/Ctrl+Enter save one message each, Shift+Enter newline, empty Enter and enabled keyboard-dismiss idle do not generate. Isolated profile; all API/external requests blocked.');
+            console.log('PASS: actual 3003 ChatRoom Enter/Ctrl+Enter send; with idle reply disabled, blur does not generate. Isolated profile; all API/external requests blocked.');
         } finally { await browser.close(); }
     })().catch(error => { console.error(error); process.exitCode = 1; });
 }

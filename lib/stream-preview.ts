@@ -49,6 +49,8 @@ export function splitStreamPreviewSegments(text: string): string[] {
 export function cleanStreamText(raw: string, options?: { stripXmlTags?: readonly string[]; stripLiterals?: readonly string[] }): string {
     if (!raw) return "";
     let text = raw;
+    // Consent is applied by the stream observer; its wire format is never prose.
+    text = text.replace(/\[一起听[^\]\r\n]*(?:\]|$)/g, "").replace(/\[(?:一|一起)?$/, "");
     text = text
         .replace(/\[(?:Echo|Love|Fireworks)\]/gi, "")
         .replace(/\[(?:E|Ec|Ech|Echo|L|Lo|Lov|Love|F|Fi|Fir|Fire|Firew|Firewo|Firewor|Firework|Fireworks)$/gi, "");

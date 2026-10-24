@@ -1,4 +1,6 @@
 "use client";
+import { ChatScreenshotImage } from "./chat-screenshot-image";
+import { ForwardedChatCard } from "./forwarded-chat";
 import { LyricShareCard } from "@/components/music/lyric-share-card";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -173,7 +175,7 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
 
     const handlePostEditSave = () => {
         const content = postContentDraft.trim();
-        if (!content && !post.musicLyricShare) return;
+        if (!content && !post.musicLyricShare && !post.forwardedChat) return;
         const photoDescription = postPhotoDescDraft.trim();
         updateMomentPost(post.id, {
             content: post.musicLyricShare ? [content, `分享歌曲《${post.musicLyricShare.title}》 — ${post.musicLyricShare.artist}`, `「${post.musicLyricShare.text}」`].filter(Boolean).join("\n\n") : content,
@@ -351,6 +353,7 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
             </div>
 
             {/* Location */}
+            {post.forwardedChat && !post.chatScreenshot && <div className="mb-3"><ForwardedChatCard record={post.forwardedChat} /></div>}
             {post.musicLyricShare && <div className="mb-3"><LyricShareCard {...post.musicLyricShare} /></div>}
             {post.location && (
                 <div className="feed-post-location mb-3 text-[var(--c-icon)] opacity-80 flex items-center ts-12">
@@ -362,7 +365,8 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
             {/* Photo area —— 四块内容全无时整个容器不渲染：空壳会照样吃掉自己的下边距
                 （flex 容器不会自塌陷），无配图的帖子正文和时间行之间就凭空多出一截，看着像空了一行。
                 间距用 mb-3 与卡片其余部分（头像行/正文/位置）对齐，media 原本的 mb-5 是全卡唯一的孤例。 */}
-            {(resolvedPhotoUrl || fallbackPhotoDescription) && (
+            {post.chatScreenshot && resolvedPhotoUrl && <div className="feed-post-media mb-3 w-full"><ChatScreenshotImage url={resolvedPhotoUrl} filename={`moment-${post.id}.png`} /></div>}
+            {!post.chatScreenshot && (resolvedPhotoUrl || fallbackPhotoDescription) && (
             <div className="feed-post-media mb-3 w-full flex flex-col gap-2">
                 {resolvedPhotoUrl && (
                     <MediaImageWithPreview
@@ -489,7 +493,7 @@ export function MomentPostCard({ post, onUpdate, onRequestDelete, onOpenCommentC
                         </div>
                         <div className="modal-footer" data-ui="modal-footer">
                             <button className="ui-btn ui-btn-ghost" onClick={() => setEditingPostOpen(false)}>取消</button>
-                            <button className="ui-btn ui-btn-action" disabled={!postContentDraft.trim() && !post.musicLyricShare} onClick={handlePostEditSave}>保存</button>
+                            <button className="ui-btn ui-btn-action" disabled={!postContentDraft.trim() && !post.musicLyricShare && !post.forwardedChat} onClick={handlePostEditSave}>保存</button>
                         </div>
                     </div>
                 </div>,

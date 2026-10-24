@@ -1,3 +1,5 @@
+import { CHAT_FORWARD_TOOL_DEFINITIONS } from "./chat-forward-protocol";
+import { LISTENING_TOOL_DEFINITIONS } from "./listening-tool-definitions";
 import type {
     CompositeToolConfig,
     CompositeToolPackageConfig,
@@ -362,6 +364,10 @@ export type EnabledTool = {
 
 export function getEnabledTools(appId?: string): EnabledTool[] {
     const tools: EnabledTool[] = [];
+    if (appId === "chat" || appId === "group_chat") {
+        tools.push(...LISTENING_TOOL_DEFINITIONS.map(tool=>({...tool,source:"internal" as const,sourceId:"listening_shared_"+tool.name})));
+        tools.push(...CHAT_FORWARD_TOOL_DEFINITIONS.map(tool=>({...tool,source:"internal" as const,sourceId:"chat_forward_"+tool.name})));
+    }
 
     const restTools = loadRestTools();
     const restPackages = loadRestToolPackages();

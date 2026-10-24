@@ -4,6 +4,7 @@ import { identityLocalStorage } from "@/lib/identity-runtime";
 import type { VoiceApiConfig, ContentAppId } from "./settings-types";
 import { loadVoiceConfigs, loadBindingConfig, resolveBinding } from "./settings-storage";
 import { synthesizeElevenLabs } from "./elevenlabs-tts";
+import { synthesizeFishAudio } from "./fish-audio-tts";
 import { supportsVoiceExpression, voiceSpeechText } from "./voice-expression";
 
 export type VoiceApiConfigResolved = VoiceApiConfig;
@@ -29,6 +30,7 @@ export function resolveVoiceConfig(characterId: string, appId?: ContentAppId): V
  * - Minimax: REST API → hex-encoded mp3
  * - OpenAI: REST API → binary audio blob
  * - ElevenLabs: REST API → binary MP3 (shared by previews, bubbles and calls)
+ * - FishAudio: official REST API → binary MP3, explicit model with no fallback
  */
 export async function synthesizeSpeech(
     text: string,
@@ -44,6 +46,7 @@ export async function synthesizeSpeech(
     // Stored expressive speech may be replayed after the user changes provider/model.
     if (!supportsVoiceExpression(provider, voiceConfig.model)) text = text.replace(/\[[a-zA-Z][a-zA-Z ,'-]{0,100}\]/g, "").trim();
     if (provider === "ElevenLabs") return synthesizeElevenLabs(text, voiceConfig);
+    if (provider === "FishAudio") return synthesizeFishAudio(text, voiceConfig);
 
     if (provider === "Minimax") {
         return synthesizeMinimax(text, voiceConfig, options?.emotion);

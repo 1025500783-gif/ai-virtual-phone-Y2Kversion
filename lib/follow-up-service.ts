@@ -1,4 +1,5 @@
 import { applyListeningRoomReply } from "./listen-together";
+import { pendingListeningInvite } from "./listening-invite-fast";
 /**
  * Background follow-up service.
  * Runs independently of any React component — fires follow-ups
@@ -98,6 +99,12 @@ const backgroundReplyFiringSet = new Set<string>();
 // 聊天室挂载时查询它：中途进入也能立刻显示「正在输入」，补上事件错过的缝
 const backgroundGeneratingSessions = new Set<string>();
 const cancelledBackgroundSessions = new Set<string>();
+const backgroundReplyControllers = new Map<string, AbortController>();
+const backgroundReplyStreams = new Map<string, string>();
+
+export function getBackgroundReplyStream(sessionId: string): string {
+    return backgroundReplyStreams.get(sessionId) || "";
+}
 
 /** 该会话是否正有后台回复在生成（聊天室中途挂载时用来恢复输入中状态）。 */
 export function isBackgroundReplyGenerating(sessionId: string): boolean {
@@ -107,6 +114,7 @@ export function isBackgroundReplyGenerating(sessionId: string): boolean {
 export function cancelBackgroundGeneration(sessionId: string): void {
     if (!backgroundGeneratingSessions.has(sessionId) && !firingSet.has(sessionId)) return;
     cancelledBackgroundSessions.add(sessionId);
+    backgroundReplyControllers.get(sessionId)?.abort();
     if (firingSet.has(sessionId)) cancelledWhileFiring.add(sessionId);
     cancelFollowUpBailout(sessionId);
 }
@@ -214,28 +222,38 @@ export async function requestBackgroundChatReply(sessionId: string): Promise<{ o
     if (!session) return { ok: false, skipped: "missing_session" };
 
     backgroundReplyFiringSet.add(sessionId);
+    const controller = new AbortController();
+    backgroundReplyControllers.set(sessionId, controller);
     try {
         const latestMessages = loadChatMessages(session.id);
+        const invitation = pendingListeningInvite(session, latestMessages);
+        const onStreamDelta = invitation ? (delta: string) => {
+            if (controller.signal.aborted || isBackgroundGenerationCancelled(session.id)) return;
+            const text = getBackgroundReplyStream(session.id) + delta;
+            backgroundReplyStreams.set(session.id, text);
+            window.dispatchEvent(new CustomEvent("followup-stream", { detail: { sessionId: session.id, text } }));
+        } : undefined;
         backgroundGeneratingSessions.add(session.id);
         window.dispatchEvent(new CustomEvent("followup-started", { detail: { sessionId: session.id } }));
         if (session.isGroup) {
             const { generateGroupChatCompletion } = await import("./group-chat-engine");
-            const replies = await generateGroupChatCompletion(session, latestMessages);
+            const replies = await generateGroupChatCompletion(session, latestMessages, { onStreamDelta }, { signal: controller.signal });
+            const listeningRoundId = `background-${Date.now()}-${Math.random().toString(36).slice(2)}`;
             for (const reply of replies) {
                 if (isBackgroundGenerationCancelled(session.id)) return { ok: false, skipped: "cancelled" };
                 await saveBackgroundCompletionRounds(
-                    [{ text: reply.responseText, rawResponseText: reply.responseText }],
+                    [{ text: applyListeningRoomReply(reply.responseText, session.id, reply.characterId, listeningRoundId), rawResponseText: reply.responseText }],
                     session.id, 0, undefined, latestMessages,
                     { senderCharacterId: reply.characterId, senderName: reply.characterName },
                 );
             }
-            window.dispatchEvent(new CustomEvent("followup-fired", { detail: { sessionId: session.id } }));
             return { ok: true };
         }
         const rounds = await generateBackgroundCompletionRounds(
             session,
             latestMessages,
-            { appTags: session.isGroup ? undefined : ["chat", "text"] },
+            { appTags: session.isGroup ? undefined : ["chat", "text"], signal: controller.signal },
+            onStreamDelta,
         );
         if (isBackgroundGenerationCancelled(session.id)) return { ok: false, skipped: "cancelled" };
         const { hasVisible, stateValues } = await saveBackgroundCompletionRounds(
@@ -246,21 +264,23 @@ export async function requestBackgroundChatReply(sessionId: string): Promise<{ o
             latestMessages,
         );
         if (hasVisible) scheduleFollowUp(session.id, 0, stateValues);
-        window.dispatchEvent(new CustomEvent("followup-fired", { detail: { sessionId: session.id } }));
         return { ok: true };
     } catch (error: any) {
+        if (controller.signal.aborted || isBackgroundGenerationCancelled(sessionId)) return { ok: false, skipped: "cancelled" };
         console.error("[BackgroundReply] Error:", error);
         pushChatMessage({
             sessionId,
             role: "system",
             content: `⚠️ 后台回复失败: ${error?.message || String(error)}`,
         });
-        window.dispatchEvent(new CustomEvent("followup-fired", { detail: { sessionId } }));
         return { ok: false };
     } finally {
+        backgroundReplyControllers.delete(sessionId);
+        backgroundReplyStreams.delete(sessionId);
         backgroundGeneratingSessions.delete(sessionId);
         cancelledBackgroundSessions.delete(sessionId);
         backgroundReplyFiringSet.delete(sessionId);
+        window.dispatchEvent(new CustomEvent("followup-fired", { detail: { sessionId } }));
     }
 }
 
@@ -305,11 +325,13 @@ async function generateBackgroundCompletionRounds(
     session: Parameters<typeof generateChatCompletion>[0],
     messages: Parameters<typeof generateChatCompletion>[1],
     options: Parameters<typeof generateChatCompletion>[2],
+    onStreamDelta?: (delta: string) => void,
 ): Promise<BackgroundCompletionRound[]> {
     const rounds: BackgroundCompletionRound[] = [];
     // 每轮 LLM 调用的思维链：onReasoning 先于该轮 onTextPart 触发，挂到该轮文本上
     let pendingReasoning: string | undefined;
     const result = await generateChatCompletion(session, messages, options, {
+        onStreamDelta,
         onReasoning: (t) => { pendingReasoning = t; },
         onTextPart: (text, _senderInfo, meta) => {
             if (!text.trim()) return;
@@ -919,7 +941,7 @@ export async function parseAndSaveResponse(
     const sess = sessions.find(s => s.id === sessionId);
     const previousState = sess && !sess.isGroup ? getLatestCharacterStateValues(sess.contactId) : [];
 
-    const { parts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(applyListeningRoomReply(rawText, sessionId), previousState);
+    const { parts, stateValues, freshStateValues, statusPanel, innerMonologue } = parseAIResponse(applyListeningRoomReply(rawText, sessionId, options?.senderCharacterId), previousState);
 
     // Detect call triggers and AI media actions, filter them out (not stored as messages)
     let triggerCall: "voice" | "video" | undefined;

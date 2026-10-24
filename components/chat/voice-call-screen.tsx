@@ -365,6 +365,9 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
                     }
                 } catch (e) {
                     console.warn("[VoiceCall] TTS failed:", e);
+                    if (voiceConfig.provider === "FishAudio" && stateRef.current !== "ENDED") setSubtitles(prev => [...prev, {
+                        id: `tts-err-${Date.now()}`, role: "assistant", text: `⚠️ ${e instanceof Error ? e.message : "Fish Audio 语音合成失败"}`,
+                    }]);
                 }
             }
 

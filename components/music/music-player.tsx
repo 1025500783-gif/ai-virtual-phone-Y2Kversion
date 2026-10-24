@@ -4,7 +4,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Heart, ListPlus, MessageCircle, X, Send } from "lucide-react";
+import { ChevronLeft, Heart, MessageCircle, X, Send } from "lucide-react";
+import { requestMusicHome } from "@/lib/music-navigation";
+import privateStyles from "./music-private.module.css";
 import { useMusicPlayer, type PlayMode } from "@/lib/music-context";
 import { createMusicListeningContext, parseTimedLyrics, lyricTimestamp, type MusicListeningContext, type TimedLyric } from "@/lib/music-listening";
 import { getMusicControlBridge } from "@/lib/music-control-bridge";
@@ -19,7 +21,9 @@ import {
     getSongCommentPage, getNeteaseSongDetail,
     type NeteasePlaylist,
 } from "@/lib/music-service";
-import { ListeningPlayerPresence } from "./listening-presence";
+import { loadListeningLibrary, editListeningPlaylist, songForListeningLibrary, LISTENING_LIBRARY_EVENT } from "@/lib/listening-library";
+import { getListeningRoom } from "@/lib/listen-together";
+import { ListeningPlayerPresence, useListeningPresence } from "./listening-presence";
 import MusicCommentsPage from "./music-comments";
 import MusicArtistPage from "./music-artist";
 import { loadMusicBg, playerBgStyle, MUSIC_BG_EVENT, type MusicBgConfig } from "@/lib/music-bg";
@@ -48,6 +52,24 @@ function formatCount(value: number): string {
 
 type PlayerStyle = "modern" | "vinyl";
 type BodyView = "cover" | "lyrics";
+
+function TrackMarquee({ text }: { text: string }) {
+    const viewport = useRef<HTMLSpanElement>(null);
+    const content = useRef<HTMLSpanElement>(null);
+    const [overflow, setOverflow] = useState(0);
+    useEffect(() => {
+        const measure = () => setOverflow(Math.max(0, (content.current?.scrollWidth ?? 0) - (viewport.current?.clientWidth ?? 0)));
+        const observer = new ResizeObserver(measure);
+        if (viewport.current) observer.observe(viewport.current);
+        if (content.current) observer.observe(content.current);
+        measure();
+        return () => observer.disconnect();
+    }, [text]);
+    return <span ref={viewport} className={privateStyles.marquee} title={text}>
+        <span ref={content} key={text} className={overflow > 1 ? privateStyles.marqueeMoving : undefined}
+            style={{ "--track-overflow": `${-overflow}px`, "--track-duration": `${Math.max(6, overflow / 24 + 3)}s` } as React.CSSProperties}>{text}</span>
+    </span>;
+}
 
 export default function MusicPlayer() {
     const player = useMusicPlayer();
@@ -277,6 +299,12 @@ export default function MusicPlayer() {
     };
 
     const [liked, setLiked] = useState(false);
+    const listening = useListeningPresence();
+    const [playlistSource, setPlaylistSource] = useState<"shared" | "cloud">("shared");
+    const [, refreshLibrary] = useState(0);
+    useEffect(()=>{const update=()=>refreshLibrary(n=>n+1);window.addEventListener(LISTENING_LIBRARY_EVENT,update);return()=>window.removeEventListener(LISTENING_LIBRARY_EVENT,update);},[]);
+    const sharedRoom = listening.room;
+    const sharedPlaylists = sharedRoom ? loadListeningLibrary().playlists.filter(p=>p.sessionId===sharedRoom.sessionId) : [];
     const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
     const [playlists, setPlaylists] = useState<NeteasePlaylist[]>([]);
     const [loadingPlaylists, setLoadingPlaylists] = useState(false);
@@ -294,45 +322,36 @@ export default function MusicPlayer() {
         return () => clearTimeout(t);
     }, [addResult]);
 
-    const openPlaylistPicker = useCallback(async () => {
-        if (!isNeteaseTrack) { showMusicToast("本地歌曲暂不支持加入网易云歌单"); return; }
-        if (!isNeteaseConfigured()) { showMusicToast("请先配置音乐服务"); return; }
-        setShowPlaylistPicker(true);
+    useEffect(() => {
+        if (!showPlaylistPicker || playlistSource !== "cloud") return;
+        let cancelled=false; setPlaylists([]);
+        if (!isNeteaseTrack || !isNeteaseConfigured()) {setLoadingPlaylists(false);return;}
         setLoadingPlaylists(true);
-        try { setPlaylists(await getUserPlaylists()); }
-        catch { setPlaylists([]); showMusicToast("歌单加载失败，请稍后重试"); }
-        finally { setLoadingPlaylists(false); }
-    }, [isNeteaseTrack, showMusicToast]);
-
-    const handleLike = useCallback(async () => {
-        if (!player.currentTrack) return;
-        const newLiked = !liked;
-        setLiked(newLiked);
-        if (newLiked) {
-            // For Netease tracks, open playlist picker to add to a playlist
-            if (isNeteaseTrack && isNeteaseConfigured()) {
-                setShowPlaylistPicker(true);
-                setLoadingPlaylists(true);
-                getUserPlaylists().then(p => { setPlaylists(p); setLoadingPlaylists(false); });
-            }
-        } else {
-            // Unlike — remove from Netease playlist if previously added
-            if (isNeteaseTrack && neteaseId) {
-                const pid = getTrackPlaylistId(neteaseId);
-                if (pid) {
-                    const result = await removeTracksFromPlaylist(pid, [neteaseId]);
-                    removeTrackPlaylistRecord(neteaseId);
-                    setAddResult(result);
-                }
-            }
-        }
-    }, [liked, player.currentTrack, isNeteaseTrack, neteaseId]);
+        getUserPlaylists().then(items=>{if(!cancelled)setPlaylists(items);}).catch(()=>{if(!cancelled)setAddResult({ok:false,message:"云音乐歌单加载失败"});}).finally(()=>{if(!cancelled)setLoadingPlaylists(false);});
+        return()=>{cancelled=true;};
+    },[showPlaylistPicker,playlistSource,isNeteaseTrack]);
+    const openPlaylistPicker = useCallback(() => {
+        setPlaylistSource(getListeningRoom() ? "shared" : "cloud");
+        setShowPlaylistPicker(true);
+    }, []);
+    const handleLike = openPlaylistPicker;
+    const saveSharedSong = (playlistId: string) => {
+        try {
+            const room=getListeningRoom();
+            if(!room || room.id!==sharedRoom?.id || room.identityId!==getCurrentIdentityId())throw new Error("一起听会话已变化，请重新选择");
+            const list=loadListeningLibrary().playlists.find(p=>p.id===playlistId && p.sessionId===room.sessionId);
+            if(!list || !player.currentTrack)throw new Error("歌单或歌曲已不可用");
+            editListeningPlaylist(room.sessionId,list.id,"self",{add:songForListeningLibrary(player.currentTrack,"self")});
+            setLiked(true);setShowPlaylistPicker(false);setAddResult({ok:true,message:"已收藏到"+list.name});
+        }catch(e){setAddResult({ok:false,message:e instanceof Error?e.message:"收藏失败"});}
+    };
 
     const handleAddToPlaylist = useCallback(async (playlist: NeteasePlaylist) => {
         if (!neteaseId) return;
         const result = await addTracksToPlaylist(playlist.id, [neteaseId]);
         if (result.ok) {
             recordTrackPlaylist(neteaseId, playlist.id);
+            setLiked(true);
         }
         setAddResult(result);
         setShowPlaylistPicker(false);
@@ -428,7 +447,7 @@ export default function MusicPlayer() {
     } as React.CSSProperties;
 
     return (
-        <div className="music-player mp-lumen mp-apple" style={ambientVars} data-view={view}>
+        <div className={`music-player mp-lumen mp-apple ${privateStyles.player}`} style={ambientVars} data-view={view}>
             {musicToast && (
                 <div className="music-toast-overlay">
                     <div className="music-toast-chip">
@@ -458,7 +477,7 @@ export default function MusicPlayer() {
             </div>
 
             <div className="mp-top">
-                <button className="mp-dismiss" onClick={player.closeFullPlayer} aria-label="收起播放器"><span /></button>
+                <button className="mp-dismiss" onClick={player.closeFullPlayer} aria-label="返回上一页" title="返回上一页"><ChevronLeft size={25} strokeWidth={1.8} aria-hidden="true" /></button>
 
             </div>
 
@@ -606,16 +625,16 @@ export default function MusicPlayer() {
 
             <div className="mp-track-row">
                 <div className="mp-titles">
-                    <div className="mp-song">{track.title}</div>
+                    <div className="mp-song"><TrackMarquee text={track.title} /></div>
                     <button className="mp-artist" onClick={openArtistPage}>
-                        {track.artist || "未知歌手"}
+                        <TrackMarquee text={track.artist || "未知歌手"} />
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m9 5 7 7-7 7" /></svg>
                     </button>
                 </div>
 
                 <div className="mp-track-actions">
                 <button className="mp-icon-button" aria-label={"歌曲评论" + (commentTotal ? "，" + formatCount(commentTotal) + "条" : "")} onClick={() => { if (!isNeteaseTrack) { showMusicToast("本地歌曲暂无评论区"); return; } setShowComments(true); }}><MessageCircle size={20} strokeWidth={1.7} /></button>
-                    <button className="mp-icon-button" aria-label={liked ? "取消喜欢" : "喜欢"} aria-pressed={liked} onClick={handleLike}><Heart size={22} fill={liked ? "currentColor" : "none"} strokeWidth={1.7} /></button>
+                    <button className="mp-icon-button" aria-label="收藏到歌单" aria-pressed={liked} onClick={handleLike}><Heart size={22} fill={liked ? "currentColor" : "none"} strokeWidth={1.7} /></button>
                     <button className="mp-icon-button" onClick={cyclePlayMode} aria-label={modeInfo.label} title={modeInfo.label}>
                         <svg width="22" height="22" viewBox="0 0 24 24" dangerouslySetInnerHTML={{ __html: modeInfo.svg }} />
                     </button>
@@ -667,7 +686,12 @@ export default function MusicPlayer() {
                 <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path fill="currentColor" stroke="none" d="M2 9h4l5-4v14l-5-4H2z" /><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" /></svg>
             </div>
             <div className="mp-footer">
-                <button className="music-player-ctrl-btn mp-ctrl-side" aria-label="加入歌单" title="加入歌单" onClick={openPlaylistPicker}><ListPlus size={25} strokeWidth={1.7} /></button>
+                <button className="music-player-ctrl-btn mp-ctrl-side" aria-label="返回音乐首页" title="返回音乐首页" onClick={() => { player.closeFullPlayer(); requestMusicHome(); }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                        <path fill="currentColor" fillRule="evenodd" d="M26 10H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h20a2 2 0 0 0 2-2V12a2 2 0 0 0-2-2ZM20.8 12.6l-7.4 1.5a.8.8 0 0 0-.6.8v7.2l-1.3.3c-1.4.3-2.1 1-1.9 2 .2 1 1.3 1.4 2.6 1.1 1.5-.3 2.2-1.1 2.2-2.4v-6.4l6-1.2v5.1l-1.3.3c-1.4.3-2.1 1-1.9 2 .2 1 1.3 1.4 2.6 1.1 1.5-.3 2.2-1.1 2.2-2.4v-8.3c0-.6-.4-.8-1.2-.7Z" />
+                        <path fill="currentColor" d="M6 6h20v2H6zm2-4h16v2H8z" />
+                    </svg>
+                </button>
                 <button className="music-player-ctrl-btn mp-ctrl-side mp-share-button" aria-label="分享到聊天" title="分享到聊天" onClick={openShareViaChat}><svg aria-hidden="true" width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M5.5 20a11 11 0 1 1 17 0M8.2 17.6a7.5 7.5 0 1 1 11.6 0M10.8 15.2a4 4 0 1 1 6.4 0" /><path d="m14 15 7.5 10H6.5z" fill="currentColor" stroke="none" /></svg></button>
                 <button
                     className="music-player-ctrl-btn mp-ctrl-side"
@@ -675,7 +699,7 @@ export default function MusicPlayer() {
                     disabled={player.queue.length === 0}
                     title="播放列表"
                 >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <svg aria-hidden="true" width="28" height="28" viewBox="1 0 22 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                         <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
                     </svg>
                 </button>
@@ -734,13 +758,17 @@ export default function MusicPlayer() {
                 <div className="music-playlist-picker-overlay" onClick={() => setShowPlaylistPicker(false)}>
                     <div className="music-playlist-picker" onClick={e => e.stopPropagation()}>
                         <div className="music-playlist-picker-header">
-                            <span>收藏到歌单</span>
+                            <span>收藏到歌单</span><div className={privateStyles.playlistSource} role="group" aria-label="歌单来源"><button aria-pressed={playlistSource==="shared"} onClick={()=>setPlaylistSource("shared")}>一起听</button><button aria-pressed={playlistSource==="cloud"} onClick={()=>setPlaylistSource("cloud")}>云音乐</button></div>
                             <button className="music-playlist-picker-close" onClick={() => setShowPlaylistPicker(false)}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                             </button>
                         </div>
                         <div className="music-playlist-picker-list">
-                            {loadingPlaylists ? (
+                            {playlistSource === "shared" ? <>
+                                <div className={privateStyles.pickerCaption}>{sharedRoom ? listening.name + " · 共同歌单" : "先选择一起听的对象"}</div>
+                                {sharedPlaylists.map(pl=><button key={pl.id} className="music-playlist-picker-item" onClick={()=>saveSharedSong(pl.id)}><span className={privateStyles.sharedCover}>♫</span><span className="music-playlist-picker-info"><span className="music-playlist-picker-name">{pl.name}</span><small className="music-playlist-picker-count">{pl.songs.length} 首</small></span></button>)}
+                                {sharedRoom && !sharedPlaylists.length && <div className="music-playlist-picker-loading">在一起听页面创建一张共同歌单吧</div>}
+                            </> : !isNeteaseTrack ? <div className="music-playlist-picker-loading">本地歌曲可收藏到一起听歌单</div> : !isNeteaseConfigured() ? <div className="music-playlist-picker-loading">请先在设置中连接云音乐账号</div> : loadingPlaylists ? (
                                 <div className="music-playlist-picker-loading">加载歌单...</div>
                             ) : playlists.length === 0 ? (
                                 <div className="music-playlist-picker-loading">没有找到歌单</div>

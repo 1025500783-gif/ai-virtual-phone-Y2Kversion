@@ -4,6 +4,7 @@
 // Prompts are assembled through the shared assemblePromptPayload() pipeline,
 // ensuring full character settings, world books, long-term memory, and user persona.
 
+import { forwardedChatPrompt } from "./chat-forward-types";
 import { loadInteractableCharacters as loadCharacters } from "./character-storage";
 import { loadChatContacts } from "./chat-storage";
 import type { Character } from "./character-types";
@@ -1312,6 +1313,8 @@ function buildMomentUiSnapshot(
     parts.push(options?.snapshotTitle || "<朋友圈界面快照>");
     parts.push(`发帖人：${authorName}`);
     parts.push(`正文：${post.content}`);
+    if (post.chatScreenshot) parts.push(`聊天截图视角：${authorName}；右侧为发帖人，左侧为其他说话人。`);
+    if (post.forwardedChat) parts.push(forwardedChatPrompt(post.forwardedChat));
     if (post.location) parts.push(`地点：${post.location}`);
     if (post.photoUrl) parts.push("配图：见附图");
     else if (post.photoDescription) parts.push(`配图：${post.photoDescription}`);

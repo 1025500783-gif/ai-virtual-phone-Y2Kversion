@@ -1,3 +1,4 @@
+import { CHAT_FORWARD_PROTOCOL } from "./chat-forward-protocol";
 // lib/builtin-preset.ts
 // Factory function for the built-in default preset.
 // Contains all standard chat functionality entries that were previously hardcoded.
@@ -884,6 +885,7 @@ export function createBuiltinPreset(): PresetConfig {
                 name: "▸ 聊天可选动作",
                 role: "system",
                 content: [
+                    CHAT_FORWARD_PROTOCOL,
                     "### 音乐分享指令：",
                     "【格式】",
                     "[音乐分享:准确歌名|歌手]",
@@ -1241,6 +1243,7 @@ export function createBuiltinPreset(): PresetConfig {
                 name: "▸ 群聊可选动作",
                 role: "system",
                 content: [
+                    CHAT_FORWARD_PROTOCOL,
                     "### 音乐分享指令：",
                     "【格式】",
                     "[角色名]: [音乐分享:准确歌名|歌手]",

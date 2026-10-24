@@ -1,5 +1,5 @@
 // This version travels with the code. Bump it together with a public release.
-export const YYK_VERSION = "1.1.1";
+export const YYK_VERSION = "1.2.0";
 export const YYK_REPOSITORY = "https://github.com/Yyk-Y2k/ai-virtual-phone-Y2Kversion";
 export const YYK_UPDATE_URL = "https://raw.githubusercontent.com/Yyk-Y2k/ai-virtual-phone-Y2Kversion/main/public/yyk-update.json";
 export const YYK_UPDATE_KEY = "float-yyk-update-preferences-v1";

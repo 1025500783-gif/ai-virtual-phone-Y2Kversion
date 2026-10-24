@@ -1,4 +1,7 @@
 import { lifePrompt } from "./user-portrait-context";
+import { CHAT_FORWARD_PROTOCOL, refreshChatForwardProtocol } from "./chat-forward-protocol";
+import { groupListeningRoomPrompt, CHARACTER_LISTENING_INVITE_PROTOCOL } from "./listen-together";
+import { listeningCapabilityPrompt } from "./listening-capability";
 // lib/group-chat-engine.ts
 // Group chat engine: single API call for all characters.
 
@@ -21,6 +24,7 @@ import { runChatPluginTransform } from "./chat-plugin-hooks";
 import { buildChatPluginPromptFragments } from "./chat-plugin-storage";
 import { buildImageDeliveryChatPrompt } from "./image-delivery-protocol";
 import { groupAlbumContext } from "./photo-album-discussion";
+import { pendingListeningInvite, listeningInviteFirstInstruction, createListeningInviteStreamObserver } from "./listening-invite-fast";
 import {
     sendLLMRequest,
     sendLLMStreamRequest,
@@ -320,8 +324,11 @@ export async function buildGroupChatPromptMessages(
     const apiConfigs = loadApiConfigs();
     const boundConfigId = options?.apiConfigId || activeSlot.apiConfigId;
     if (!boundConfigId) throw new ChatEngineError("No API Configuration bound for group chat.");
-    const config = apiConfigs.find(c => c.id === boundConfigId);
-    if (!config) throw new ChatEngineError("API Configuration not found for group chat.");
+    const boundConfig = apiConfigs.find(c => c.id === boundConfigId);
+    if (!boundConfig) throw new ChatEngineError("API Configuration not found for group chat.");
+    const fastInvite = !options?.promptProfile && (!options?.appTags || options.appTags.includes("group_chat")) && !options?.appTags?.includes("offline")
+        ? pendingListeningInvite(session, history) : null;
+    const config = fastInvite ? { ...boundConfig, enableImageRecognition: false } : boundConfig;
 
     const presets = loadPresets();
     let preset = activeSlot.presetId ? presets.find(p => p.id === activeSlot.presetId) || null : null;
@@ -372,7 +379,7 @@ export async function buildGroupChatPromptMessages(
         try {
             const [coreResults, results] = await Promise.all([
                 retrieveCoreMemoriesForPrompt(charId, memConfig),
-                retrieveMemoriesForPrompt(charId, wbActivationContext, memConfig),
+                retrieveMemoriesForPrompt(charId, wbActivationContext, fastInvite ? { ...memConfig, vectorRecallEnabled: false } : memConfig),
             ]);
             coreMemories = formatCoreMemories(coreResults);
             longTermMemories = formatLongTermMemories(results);
@@ -401,7 +408,7 @@ export async function buildGroupChatPromptMessages(
     );
     const groupPromptTimestampOptions = getPromptTimestampOptionsForTimeContext(groupTimeContext);
 
-    const enabledTools = options?.disableTools ? [] : getEnabledTools("group_chat");
+    const enabledTools = options?.disableTools || fastInvite ? [] : getEnabledTools("group_chat");
     const usesNativeActions = Boolean(nativeToolProtocolForConfig(config) && enabledTools.length > 0);
     const annotatedHistory = annotateGroupHistory(history, participantIds, userName);
     const {
@@ -556,6 +563,15 @@ export async function buildGroupChatPromptMessages(
     } else {
         appendEmptyGenerateGuardMessage(llmMessages, config, history);
     }
+    if (enabledTools.some(tool=>tool.name==="转发聊天记录")) refreshChatForwardProtocol(llmMessages);
+    if (!isOfflineMode && !promptProfile && !session.isSpectator && enabledTools.some(tool=>tool.name==="转发聊天记录") && !llmMessages.some(message=>typeof message.content==="string" && message.content.includes("<chatForwarding>"))) llmMessages.push({role:"system",content:CHAT_FORWARD_PROTOCOL});
+    if (activeAppTags.includes("group_chat") && !isOfflineMode && !promptProfile && !session.isSpectator) {
+        const listening = groupListeningRoomPrompt(session.id, members.map(m => m.character.id));
+        const capability = listeningCapabilityPrompt(enabledTools, usesNativeActions, true, llmMessages, { sessionId: session.id, characterIds: members.map(member => member.character.id) });
+        llmMessages.push({ role: "system", content: CHARACTER_LISTENING_INVITE_PROTOCOL
+            + "群聊邀请与回应须在自己的[角色名]:发言段内；每人只能决定自己的加入/退出，不能替他人或用户同意。"
+            + (listening ? "\n" + listening : "") + (capability ? "\n" + capability : "") });
+    }
     if (activeAppTags.includes("group_chat")) {
         const directionContext = buildGroupDirectionContext(session.groupDescription);
         if (directionContext) llmMessages.push({ role: "system", content: directionContext });
@@ -573,6 +589,7 @@ export async function buildGroupChatPromptMessages(
             if (portrait) llmMessages.push({ role: "user", content: [{ type: "text", text: "[图片ID:user-portrait] 用户本人肖像参考；不是新聊天图片。请在 float_state.photos 中记录客观外貌描述，id 填 user-portrait。结合文字设定辨认，无法确定合照人物时询问。" }, { type: "image_url", image_url: { url: portrait, detail: "low" } }] });
         }
     }
+    if (fastInvite) llmMessages.push({ role: "system", content: listeningInviteFirstInstruction(fastInvite) });
     return { llmMessages, config, preset, regexes, nameToId, memberNames, enabledTools, userName, appTags: activeAppTags };
 }
 
@@ -876,12 +893,24 @@ export async function generateGroupChatCompletion(
     callbacks?: ChatCompletionCallbacks,
     options?: GroupChatPromptBuildOptions & { signal?: AbortSignal; skipMemorySummarization?: boolean },
 ): Promise<{ characterId: string; characterName: string; responseText: string }[]> {
+    const inviteStartedAt = Date.now();
+    const invitation = !options?.promptProfile && !options?.appTags?.includes("offline")
+        && (!options?.appTags || options.appTags.includes("group_chat")) ? pendingListeningInvite(session, history) : null;
+    if (invitation) session = { ...session, streamOnline: true };
     const { llmMessages, config, preset, regexes, nameToId, memberNames, enabledTools, userName, appTags } = await buildGroupChatPromptMessages(session, history, {
         appTags: options?.appTags,
         disableTools: options?.disableTools,
         promptProfile: options?.promptProfile,
         apiConfigId: options?.apiConfigId,
     });
+    if (invitation) {
+        const observer = createListeningInviteStreamObserver(invitation, { signal: options?.signal, names: nameToId, thinkingTags: [preset?.online_thinking_tag || "thinking"], startedAt: inviteStartedAt });
+        const original = callbacks;
+        callbacks = { ...original, onStreamDelta: delta => {
+            observer.push(delta);
+            return original?.onStreamDelta?.(delta);
+        } };
+    }
     const chars = loadCharacters();
     const participantIds = session.participantIds || [];
 
@@ -926,6 +955,7 @@ export async function generateGroupChatCompletion(
                     appTags,
                     debugSessionId: session.id,
                     signal: options?.signal,
+                    immediateContent: Boolean(invitation),
                 }, {
                     onDelta: (text) => callbacks?.onStreamDelta?.(text),
                     // 流式下 onReasoningDelta 是单段增量：累积后再喂 onReasoning（保持整段请求语义）
@@ -962,8 +992,8 @@ export async function generateGroupChatCompletion(
         // 剔除预设配置的文本片段（<思考结束> 等残留标签），不进入消息/提示词
         filteredOutput = stripPresetTexts(filteredOutput, preset);
 
-        const toolFetches = parseToolFetches(filteredOutput);
-        const { toolCalls } = parseToolCalls(filteredOutput);
+        const toolFetches = invitation ? [] : parseToolFetches(filteredOutput);
+        const { toolCalls } = invitation ? { toolCalls: [] } : parseToolCalls(filteredOutput);
         const assistantForToolContext = stripStateAndInnerForPrompt(filteredOutput);
 
         if (toolFetches.length === 0 && toolCalls.length === 0) {

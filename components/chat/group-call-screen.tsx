@@ -283,6 +283,9 @@ export function GroupCallScreen({ type, session, characters, onEnd, initiator = 
                         }
                     } catch (e) {
                         console.warn("[GroupCall] TTS failed:", e);
+                        if (voiceConfig.provider === "FishAudio" && stateRef.current !== "ENDED") setSubtitles(prev => [...prev, {
+                            id: `tts-err-${Date.now()}`, role: "assistant", text: `⚠️ ${e instanceof Error ? e.message : "Fish Audio 语音合成失败"}`,
+                        }]);
                     }
                 }
                 setSpeakingCharId(null);

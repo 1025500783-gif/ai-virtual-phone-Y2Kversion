@@ -5,7 +5,7 @@ import type { ChatMessage } from "@/lib/chat-storage";
 import { getListeningRoom, subscribeListeningRoom, respondToListeningInvitation } from "@/lib/listen-together";
 
 const serverSnapshot = () => null;
-export function ListeningInviteCard({ msg }: { msg: ChatMessage }) {
+export function ListeningInviteCard({ msg, readOnly = false }: { msg: ChatMessage; readOnly?: boolean }) {
     const room = useSyncExternalStore(subscribeListeningRoom, getListeningRoom, serverSnapshot);
     const invite = msg.mediaData?.listeningInvite;
     const [failedCover, setFailedCover] = useState<string>();
@@ -16,7 +16,7 @@ export function ListeningInviteCard({ msg }: { msg: ChatMessage }) {
     const status = room?.id === invite?.roomId && room?.sessionId === msg.sessionId ? room?.status : undefined;
     const label = status === "joined" ? "已加入 · 一起听中" : status === "declined" || invite?.response === "declined" ? "已婉拒" : status === "invited" ? "等待回应" : invite?.response === "accepted" ? "已接受过这份邀请" : invite?.initiator === "character" ? "邀请已失效" : "邀请已发送";
     const cover = invite?.coverUrl && failedCover !== invite.coverUrl ? invite.coverUrl : undefined;
-    const actionable = status === "invited" && invite?.initiator === "character";
+    const actionable = !readOnly && status === "invited" && invite?.initiator === "character";
     const respond = async (accept: boolean) => {
         if (!actionable || busy || !invite) return;
         setBusy(true); setError("");

@@ -1,0 +1,107 @@
+.app :global(.music-header){height:64px;min-height:64px;flex-shrink:0;display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;padding:10px 20px;gap:8px}
+.app :global(.music-header-action){width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--c-music-surface);color:var(--c-music-text)}
+.app :global(.music-header-title){text-align:center;font-size:17px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.app :global(.music-bottom-dock){background:none;border:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;padding-inline:16px}
+.app :global(.music-tabbar){display:flex;gap:4px;margin:8px 0 max(10px,env(safe-area-inset-bottom));padding:5px;border-radius:32px;background:color-mix(in srgb,var(--c-music-surface-solid) 85%,transparent);border:1px solid color-mix(in srgb,var(--c-music-text) 9%,transparent);backdrop-filter:blur(24px) saturate(140%);-webkit-backdrop-filter:blur(24px) saturate(140%);box-shadow:0 4px 18px #00000008}
+.app :global(.music-tabbar-item){flex:1;min-width:0;min-height:46px;flex-direction:row;gap:7px;border-radius:25px;padding:8px;font-size:12px}
+.app :global(.music-tabbar-item[data-active]){background:color-mix(in srgb,var(--c-music-text) 6%,transparent);color:var(--c-music-text)}
+.app :global(.music-greet){padding-top:12px}
+.app :global(.music-greet-hello){font-size:30px;letter-spacing:-.7px;font-weight:700}
+.app :global(.music-greet-sub){font-size:12px;line-height:1.7;margin-top:7px}
+.app :global(.music-search-entry){border-radius:13px;box-shadow:none}
+.app :global(.music-rail-cover){border-radius:8px;box-shadow:none}
+.app :global(.music-rail-name){font-size:13px;font-weight:500;line-height:1.45}
+.app :global(.music-mine-hero-body){display:grid;grid-template-columns:48px minmax(0,1fr);text-align:left;gap:4px 13px;align-items:center;padding:14px 0}
+.app :global(.music-mine-ava){width:48px;height:48px;box-shadow:none;grid-row:1 / span 2}
+.app :global(.music-mine-name){margin:0;font-size:21px;letter-spacing:-.4px}
+.app :global(.music-mine-sig){margin:0;max-width:100%;grid-column:2;font-size:11px}
+.app :global(.music-mine-stats){grid-column:1 / -1;flex-wrap:wrap;gap:14px;margin-top:12px}
+.app :global(.music-mine-chips){grid-column:1 / -1;gap:8px;margin-top:13px}
+.app :global(.music-mine-chips button){border-radius:14px;min-height:44px;background:var(--c-music-surface);box-shadow:none;backdrop-filter:none}
+.app :global(.music-mine-cover-card){width:140px;flex:0 0 140px;transform:none}
+.app :global(.music-mine-cover-card img){width:140px;height:140px;border-radius:8px;box-shadow:none}
+.app :global(.music-mine-cover-card span){font-size:12px;line-height:1.5}
+.app :global(.music-mine-subtabs){gap:18px;overflow-x:auto}
+.app :global(.music-mine-subtabs button){flex-shrink:0;font-size:14px;min-height:44px}
+.app :global(.music-private-entry){display:flex;align-items:center;gap:12px;min-height:58px;width:100%;border:0;border-bottom:1px solid color-mix(in srgb,var(--c-music-text) 10%,transparent);background:none;color:var(--c-music-text);text-align:left}
+.app :global(.music-private-entry span){flex:1}
+.app :global(button:focus-visible){outline:2px solid var(--c-music-accent);outline-offset:3px}
+
+/* Scoped overrides outrank the legacy music-app palette and dock rules. */
+.app.app :global(.music-bottom-dock .music-tabbar){position:relative;isolation:isolate;height:56px;padding:5px;gap:0;border:1px solid color-mix(in srgb,var(--c-music-text) 7%,transparent);background:color-mix(in srgb,var(--c-music-panel) 72%,transparent);box-shadow:0 3px 14px #00000007;backdrop-filter:blur(16px) saturate(120%);-webkit-backdrop-filter:blur(16px) saturate(120%)}
+.app.app :global(.music-tabbar)::before{content:"";position:absolute;inset:5px auto 5px 5px;width:calc((100% - 10px) / 3);border-radius:999px;pointer-events:none;background:color-mix(in srgb,var(--c-music-bg) 88%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c-music-text) 5%,transparent),0 2px 6px #00000008;transform:translateX(0);transition:transform 380ms cubic-bezier(.22,1,.36,1)}
+.app.app :global(.music-tabbar[data-selection="1"])::before{transform:translateX(100%)}
+.app.app :global(.music-tabbar[data-selection="2"])::before{transform:translateX(200%)}
+.app.app :global(.music-tabbar-item){position:relative;z-index:1;justify-content:center;min-height:44px;padding:7px 4px;gap:7px;font-size:12px;color:var(--c-music-accent);background:transparent;transition:color 200ms ease,transform 180ms ease}
+.app.app :global(.music-tabbar-item[data-active]){background:transparent;color:var(--c-music-text)}
+.app.app :global(.music-tabbar-item svg),.app.app :global(.music-tabbar-item[data-active] svg){color:inherit;filter:none;width:21px;height:21px}
+.app.app :global(.music-tabbar-item:active){transform:scale(.96)}
+.app.app :global(.music-settings-btn:not(.music-settings-btn-danger)){border-radius:999px;background:color-mix(in srgb,var(--c-music-surface) 65%,transparent);color:var(--c-music-text);border:1px solid color-mix(in srgb,var(--c-music-text) 8%,transparent);box-shadow:none;transition:opacity 180ms ease,transform 180ms ease}
+.app.app :global(.music-settings-btn-primary){font-weight:600}
+.app.app :global(.music-settings-input){background:color-mix(in srgb,var(--c-music-surface) 65%,transparent);box-shadow:none}
+@media(prefers-reduced-motion:reduce){.app.app :global(.music-tabbar)::before,.app.app :global(.music-tabbar-item),.app.app :global(.music-settings-btn){transition:none}}
+
+/* Neutral controls; semantic colors remain separate from selection. */
+.app.app,.player.player{--c-music-primary:var(--c-music-text);--c-music-primary-dim:color-mix(in srgb,var(--c-music-text) 7%,transparent);--music-success:#26713d}
+.app.app :global(.music-bg-mode){min-height:36px;transition:background-color 180ms ease,color 180ms ease,border-color 180ms ease}
+.app.app :global(.music-bg-mode[data-on]),.app.app :global(.music-pl-chip[data-on]){color:var(--c-music-text);background:var(--c-music-primary-dim);border-color:color-mix(in srgb,var(--c-music-text) 24%,transparent)}
+.app.app :global(.music-settings .ui-toggle[data-checked]){background:var(--c-music-text)}
+.app.app :global(.music-playlist-play-all){color:var(--c-music-bg)}
+.app.app :global(.music-settings-btn-danger){background:color-mix(in srgb,var(--c-music-liked) 9%,transparent);color:var(--c-music-liked);box-shadow:none;border-color:color-mix(in srgb,var(--c-music-liked) 18%,transparent);border-radius:999px}
+.player.player :global(.mp-icon-button[aria-pressed="true"]){color:var(--c-music-liked)}
+.player.player :global(.mp-footer button[aria-pressed="true"]),.player.player :global(.mp-footer .mp-share-button),.player.player :global(.mp-lyric-seek[aria-pressed="true"]){color:var(--c-music-text)}
+.app.app :global(.music-settings-result-ok),.player.player :global(.music-toast-ok){color:var(--music-success);background:color-mix(in srgb,var(--music-success) 8%,var(--c-music-panel));border-color:color-mix(in srgb,var(--music-success) 22%,transparent)}
+.app.app :global(button:focus-visible),.app.app :global(input:focus-visible),.player.player :global(button:focus-visible),.player.player :global(summary:focus-visible),.player.player :global(input:focus-visible){outline:2px solid var(--c-music-accent);outline-offset:3px}
+@media(prefers-color-scheme:dark){.app.app,.player.player{--music-success:#7fd99a}}
+@media(prefers-reduced-motion:reduce){.app.app :global(.music-bg-mode){transition:none}}
+.app.app :global(.music-heart-btn){background:var(--c-music-text);color:var(--c-music-bg)}
+.app.app :global(.music-settings .ui-toggle[data-checked] .ui-toggle-knob){background:var(--c-music-bg)}
+
+.app.app :global(.music-header-action){background:color-mix(in srgb,var(--c-music-panel) 72%,transparent);border:1px solid color-mix(in srgb,var(--c-music-text) 7%,transparent);box-shadow:0 3px 14px #00000007;backdrop-filter:blur(16px) saturate(120%);-webkit-backdrop-filter:blur(16px) saturate(120%);transition:transform 180ms ease,opacity 180ms ease}
+.app.app :global(.music-header-action:active){transform:scale(.94);opacity:.75}
+.app.app :global(.music-mine-chips){display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.player.player :global(.mp-titles){min-width:0;overflow:hidden;text-align:left}
+.player.player :global(.mp-song){text-overflow:clip;white-space:nowrap}
+.player.player :global(.mp-artist){display:flex;width:100%;min-width:0;white-space:nowrap;text-align:left;justify-content:flex-start}
+.player.player :global(.mp-track-actions){flex-shrink:0}
+.marquee{display:block;min-width:0;max-width:100%;overflow:hidden;white-space:nowrap;text-align:left}
+.marquee>span{display:block;width:max-content;min-width:100%}
+.marqueeMoving{animation:trackTextPan var(--track-duration) ease-in-out infinite alternate}
+@keyframes trackTextPan{0%,18%{transform:translateX(0)}82%,100%{transform:translateX(var(--track-overflow))}}
+@media(prefers-reduced-motion:reduce){.marqueeMoving{animation:none}.marquee{overflow-x:auto}.app.app :global(.music-header-action){transition:none}}
+
+/* Frosted surfaces obscure underlying text, while retaining cover/background tint. */
+.app.app :global(.music-bottom-dock .music-now-bar){background:color-mix(in srgb,var(--c-music-panel) 88%,transparent);backdrop-filter:blur(20px) saturate(120%);-webkit-backdrop-filter:blur(20px) saturate(120%);border:1px solid color-mix(in srgb,var(--c-music-text) 7%,transparent);border-radius:22px;box-shadow:0 3px 14px #00000008;overflow:hidden}
+.player.player :global(.music-queue-drawer),.player.player :global(.music-playlist-picker){background:color-mix(in srgb,var(--c-music-panel) 78%,transparent);backdrop-filter:blur(24px) saturate(125%);-webkit-backdrop-filter:blur(24px) saturate(125%);border:1px solid color-mix(in srgb,var(--c-music-text) 9%,transparent);box-shadow:0 8px 32px #00000012;overflow:hidden}
+.player.player :global(.music-queue-drawer){border-radius:26px 0 0 26px}
+.player.player :global(.music-queue-header){background:transparent}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.app.app :global(.music-bottom-dock .music-now-bar),.player.player :global(.music-queue-drawer),.player.player :global(.music-playlist-picker){background:var(--c-music-panel)}}
+.app.app :global(.music-search-input:focus-visible){outline:none}
+.app.app :global(.music-search-bar:focus-within){box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c-music-text) 20%,transparent)}
+.playlistSource{display:flex;gap:2px;padding:3px;border-radius:999px;margin-left:auto;background:var(--c-music-surface);border:1px solid var(--c-music-surface-solid)}
+.playlistSource button{border:0;border-radius:999px;background:transparent;color:var(--c-music-accent);font:inherit;font-size:11px;padding:7px 10px;white-space:nowrap;cursor:pointer}
+.playlistSource button[aria-pressed=true]{background:var(--c-music-panel);color:var(--c-music-text);box-shadow:0 1px 4px #0001}
+.sharedCover{display:grid;place-items:center;width:42px;height:42px;border-radius:9px;background:var(--c-music-surface);color:var(--c-music-accent);flex-shrink:0}
+.pickerCaption{padding:12px 20px 8px;color:var(--c-music-accent);font-size:11px;text-align:left}
+.player.player :global(.music-playlist-picker-info){display:flex;flex-direction:column;gap:4px;min-width:0}
+.player.player :global(.music-playlist-picker-count){display:block;font-size:11px;color:var(--c-music-accent)}
+.player.player :global(.music-toast-ok){background:color-mix(in srgb,var(--c-music-panel) 92%,transparent);color:var(--c-music-text);border:1px solid var(--c-music-surface-solid)}
+.player.player :global(.mp-top){justify-content:flex-start}
+.player.player :global(.mp-dismiss){width:40px;height:40px;margin-left:20px;border-radius:50%;background:color-mix(in srgb,var(--c-music-panel) 28%,transparent);border:1px solid color-mix(in srgb,var(--c-music-text) 7%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.player.player :global(.mp-dismiss:active){transform:scale(.97)}
+.player.player :global(.mp-dismiss:focus-visible){outline:2px solid var(--c-music-accent);outline-offset:3px}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.player.player :global(.mp-dismiss){background:var(--c-music-panel)}}
+
+/* Quiet title editing; preserve an understated focus cue without a box. */
+.app.app input[data-listening-name],.app.app input[data-listening-name]:focus,.app.app input[data-listening-name]:focus-visible{outline:none!important;box-shadow:none!important;border:0;border-radius:0;background:transparent;appearance:none;-webkit-appearance:none;font-size:16px;caret-color:var(--c-music-text)}
+.app.app input[data-listening-name]:focus{border-bottom:1px solid color-mix(in srgb,var(--c-music-text) 18%,transparent)}
+.app.app :global(.music-bottom-dock .music-now-bar),.app.app :global(.music-bottom-dock .music-tabbar){background:color-mix(in srgb,var(--c-music-panel) 78%,transparent);backdrop-filter:blur(24px) saturate(125%);-webkit-backdrop-filter:blur(24px) saturate(125%);border:1px solid color-mix(in srgb,var(--c-music-text) 7%,transparent);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--c-music-panel) 50%,transparent),0 3px 14px #00000008}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.app.app :global(.music-bottom-dock .music-now-bar),.app.app :global(.music-bottom-dock .music-tabbar){background:var(--c-music-panel)}}
+
+/* A single material shared by both dock surfaces. */
+.app.app :global(.music-bottom-dock) .dockGlass{background:color-mix(in srgb,var(--c-music-panel) 70%,transparent);backdrop-filter:blur(28px) saturate(130%);-webkit-backdrop-filter:blur(28px) saturate(130%);border:1px solid color-mix(in srgb,var(--c-music-text) 7%,transparent);border-radius:32px;box-shadow:inset 0 1px 0 color-mix(in srgb,var(--c-music-panel) 65%,transparent),0 4px 18px #00000008;isolation:isolate;overflow:hidden}
+.app.app :global(.music-tabbar)::before{background:color-mix(in srgb,var(--c-music-panel) 65%,transparent)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.app.app :global(.music-bottom-dock) .dockGlass{background:var(--c-music-panel)}}
+/* Equal dock frames and optical bounds; all icons inherit the same foreground. */
+.player.player :global(.mp-footer .mp-ctrl-side){color:var(--c-music-text)}
+.player.player :global(.mp-footer .mp-ctrl-side svg){width:28px;height:28px;display:block}

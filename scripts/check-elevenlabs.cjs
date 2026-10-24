@@ -10,7 +10,9 @@ let cleared = 0;
 const globals = { Blob, Response, URL, URLSearchParams, AbortController, TypeError, DOMException,
     fetch: (...args) => mockFetch(...args), setTimeout: fn => { timeoutCallback = fn; return 1; }, clearTimeout: () => { cleared++; } };
 function load(file, require = () => { throw new Error('Unexpected import'); }) {
-    const context = { ...globals, exports: {}, require };
+    const context = { ...globals, exports: {}, require: name => name.endsWith('identity-runtime')
+        ? { assertIdentityActive: () => {}, registerIdentityRequest: () => () => {}, identityLocalStorage: {} }
+        : name === './voice-expression' ? { voiceSpeechText: text => text, supportsVoiceExpression: () => false } : require(name) };
     vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, context);
     return context.exports;
 }
@@ -77,7 +79,9 @@ async function main() {
         const context={exports:{},require:name=>{
             if(name==='react') return {...React,useState:initial=>{const i=index++; return [i===0?[voiceConfig]:i===1?voiceConfig.id:i===12?true:initial,()=>{}];},useEffect:()=>{},useRef:value=>({current:value}),useCallback:fn=>fn,useContext:()=>({setSubpageRightAction:()=>{}})};
             if(name==='react/jsx-runtime') return require(name);
+            if(name==='./voice-settings.module.css') return { default:{} };
             if(name==='@/lib/elevenlabs-tts') return eleven;
+            if(name==='@/lib/fish-audio-tts') return { FISH_AUDIO_BASE_URL:'https://api.fish.audio/v1', FISH_AUDIO_FREE_MODEL:'s2.1-pro-free', FISH_AUDIO_MODELS:['s2.1-pro-free','s2.1-pro','s2-pro','drama-3'] };
             if(name==='@/lib/tts-service') return tts;
             if(name==='@/lib/settings-storage') return {loadVoiceConfigs:()=>[voiceConfig],saveVoiceConfigs:()=>{throw new Error('Render must not write storage');}};
             if(name==='../phone-settings-app') return {SettingsContext:{}};
@@ -94,7 +98,7 @@ async function main() {
     assert.match(ui,/ElevenLabs/); assert.match(ui,/稳定性/); assert.match(ui,/同步音色列表/);
     assert.doesNotMatch(ui,/克隆音色初次使用|上传音频克隆音色|whisper-1/);
     const v3ui=renderSettings({...config,apiKey:'',model:'eleven_v3'});
-    assert.match(v3ui,/v3 使用账户音色默认参数/); assert.doesNotMatch(v3ui,/稳定性/);
+    assert.match(v3ui,/v3 使用音色默认参数/); assert.doesNotMatch(v3ui,/稳定性/);
     console.log('PASS: ElevenLabs dispatch, binding, request contract, v3 isolation, limits, binary audio, auth/errors/timeout, voice pagination; OpenAI + Minimax regression. No real API calls.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

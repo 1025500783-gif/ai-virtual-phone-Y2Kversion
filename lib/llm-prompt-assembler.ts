@@ -1,4 +1,5 @@
 import { listeningRoomPrompt, CHARACTER_LISTENING_INVITE_PROTOCOL } from "./listen-together";
+import { forwardedChatPrompt } from "./chat-forward-types";
 // lib/llm-prompt-assembler.ts
 
 import { Character } from "./character-types";
@@ -1217,6 +1218,8 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
 export function formatRichMediaForHistory(msg: ChatMessage, userName: string, charName: string, isGroup?: boolean): string {
     const d = msg.mediaData;
     switch (msg.mediaType) {
+        case "forwarded_chat":
+            return msg.mediaData?.forwardedChat ? forwardedChatPrompt(msg.mediaData.forwardedChat) : "[聊天记录不可用]";
         case "red_packet": {
             const cnt = d?.count;
             return isGroup && cnt && cnt > 1

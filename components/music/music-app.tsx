@@ -1,7 +1,10 @@
 // components/music/music-app.tsx — Music App main page (immersive, no PageShell)
 "use client";
 
-import { ChevronLeft, Settings } from "lucide-react";
+import { resolveUserIdentity } from "@/lib/settings-storage";
+import ListeningLibrary from "./listening-library";
+import { ChevronLeft, ChevronRight, Settings, Headphones, Search, Music } from "lucide-react";
+import { Toggle } from "@/components/ui/form";
 import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import {
     loadAllTracks, saveTrack, deleteTrack,
@@ -32,13 +35,16 @@ import {
     MUSIC_BG_EVENT, type MusicBgConfig, type MusicPlayerBgMode,
 } from "@/lib/music-bg";
 
-type Props = { onClose: () => void; headerAccessory?: React.ReactNode };
-type TabId = "recommend" | "mine" | "search" | "local";
+import privateStyles from "./music-private.module.css";
+import { MUSIC_HOME_EVENT, consumeMusicHomeRequest } from "@/lib/music-navigation";
 
-export default function MusicApp({ onClose, headerAccessory }: Props) {
+type Props = { onClose: () => void; headerAccessory?: React.ReactNode; initialTogether?: boolean; listeningSessionId?: string };
+type TabId = "recommend" | "mine" | "search" | "local" | "together";
+
+export default function MusicApp({ onClose, headerAccessory, initialTogether = false, listeningSessionId }: Props) {
     const [tracks, setTracks] = useState<MusicTrack[]>([]);
     const [loading, setLoading] = useState(true);
-    const [tab, setTab] = useState<TabId>("local");
+    const [tab, setTab] = useState<TabId>(initialTogether ? "together" : "mine");
     const [hasNetease, setHasNetease] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showCssEditor, setShowCssEditor] = useState(false);
@@ -54,6 +60,20 @@ export default function MusicApp({ onClose, headerAccessory }: Props) {
     const musicLoadingFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [bgCfg, setBgCfg] = useState<MusicBgConfig>(() => loadMusicBg());
     const player = useMusicControls();
+
+    useEffect(() => {
+        const returnHome = () => {
+            if (!consumeMusicHomeRequest()) return;
+            setTab("mine");
+            setActivePlaylist(null);
+            setDailyView(null);
+            setShowSettings(false);
+            setShowCssEditor(false);
+        };
+        window.addEventListener(MUSIC_HOME_EVENT, returnHome);
+        returnHome();
+        return () => window.removeEventListener(MUSIC_HOME_EVENT, returnHome);
+    }, []);
 
     useEffect(() => {
         const handleBgChange = () => setBgCfg(loadMusicBg());
@@ -76,7 +96,7 @@ export default function MusicApp({ onClose, headerAccessory }: Props) {
         loadAllTracks().then(t => { setTracks(t); setLoading(false); });
         const neteaseOk = isNeteaseConfigured();
         setHasNetease(neteaseOk);
-        if (neteaseOk) setTab("recommend");
+        if (neteaseOk && !initialTogether) setTab("recommend");
         setCustomCss(kvGet("music-custom-css") || "");
         // Load cached playlists immediately, then refresh from API
         if (neteaseOk) {
@@ -279,7 +299,7 @@ export default function MusicApp({ onClose, headerAccessory }: Props) {
     };
 
     return (
-        <div className="music-app" style={appBgStyle(bgCfg)} {...(player.currentTrack ? { "data-nowbar": "" } : {})}>
+        <div className={`music-app ${privateStyles.app}`} style={appBgStyle(bgCfg)} {...(player.currentTrack ? { "data-nowbar": "" } : {})}>
             {customCss && <SessionCustomCSS css={customCss} scope=".music-app" />}
             {musicToast && (
                 <div className="music-toast-overlay">
@@ -300,13 +320,15 @@ export default function MusicApp({ onClose, headerAccessory }: Props) {
                     <button className="music-header-action" onClick={() => {
                         if (dailyView) { setDailyView(null); }
                         else if (activePlaylist) { setActivePlaylist(null); }
+                        else if (tab === "search") { setTab("recommend"); }
+                        else if (tab === "local") { setTab("mine"); }
                         else { onClose(); }
                     }} title="返回">
                         <ChevronLeft size={28} strokeWidth={1.9} aria-hidden="true" />
                     </button>
                 </div>
                 <div className="music-header-title">
-                    {dailyView ? "每日推荐" : activePlaylist && tab === "recommend" ? "歌单详情" : tab === "recommend" ? "音乐" : tab === "search" ? "搜索" : tab === "mine" ? "我的" : "本地音乐"}
+                    {dailyView ? "每日推荐" : activePlaylist ? "歌单详情" : tab === "recommend" ? "音乐" : tab === "search" ? "搜索" : tab === "mine" ? "我的" : tab === "together" ? "一起听" : "本地音乐"}
                 </div>
                 <div className="music-header-right">
                     <button className="music-header-action" onClick={() => setShowSettings(true)} title="设置">
@@ -315,8 +337,14 @@ export default function MusicApp({ onClose, headerAccessory }: Props) {
                 </div>
             </div>
 
-            {headerAccessory}
             {/* Tab content */}
+            {tab === "together" && <ListeningLibrary heroActions={headerAccessory} heroSessionId={listeningSessionId} />}
+            {!hasNetease && (tab === "recommend" || tab === "mine") && <div className="music-discovery">
+                <h2 className="music-greet-hello">{tab === "mine" ? "音乐资料库" : "发现音乐"}</h2>
+                <p className="music-greet-sub">{tab === "mine" ? "收藏与导入的音乐，在这里继续听。" : "连接音乐服务，发现更多歌曲与歌单。"}</p>
+                <button className="music-private-entry" onClick={() => setTab("local")}><Music size={20} /><span>本地音乐</span><ChevronRight size={18} /></button>
+                <button className="music-private-entry" onClick={() => setShowSettings(true)}><Settings size={20} /><span>连接音乐服务</span><ChevronRight size={18} /></button>
+            </div>}
             {tab === "recommend" && hasNetease && (dailyView ? (
                 <DailySongsPage
                     songs={dailyView}
@@ -360,7 +388,6 @@ export default function MusicApp({ onClose, headerAccessory }: Props) {
                     loading={playlistsLoading}
                     onToast={showMusicToast}
                     onGoLocal={() => setTab("local")}
-                    onOpenSettings={() => setShowSettings(true)}
                 />
             )}
 
@@ -415,7 +442,7 @@ export default function MusicApp({ onClose, headerAccessory }: Props) {
             {/* Bottom dock: mini player + tab bar share one glass slab */}
             <div className="music-bottom-dock">
             {player.currentTrack && (
-                <div className="music-now-bar" onClick={player.openFullPlayer}>
+                <div className={"music-now-bar " + privateStyles.dockGlass} onClick={player.openFullPlayer}>
                     <div className="music-now-bar-cover" {...(player.isPlaying ? { "data-playing": "" } : {})}>
                         {player.currentTrack.coverUrl ? (
                             <img src={player.currentTrack.coverUrl} alt="" />
@@ -449,31 +476,14 @@ export default function MusicApp({ onClose, headerAccessory }: Props) {
                 </div>
             )}
 
-            {/* Bottom tab bar */}
-            <div className="music-tabbar">
-                {hasNetease && (
-                    <button className="music-tabbar-item" {...(tab === "recommend" ? { "data-active": "" } : {})} onClick={() => { setTab("recommend"); setActivePlaylist(null); setDailyView(null); }}>
-                        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"><path d="M3 10.5 12 3l9 7.5V21h-6v-6h-6v6H3z" /></svg>
-                        <span>推荐</span>
-                    </button>
-                )}
-                {hasNetease && (
-                    <button className="music-tabbar-item" {...(tab === "search" ? { "data-active": "" } : {})} onClick={() => setTab("search")}>
-                        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-                        <span>搜索</span>
-                    </button>
-                )}
-                {hasNetease && (
-                    <button className="music-tabbar-item" {...(tab === "mine" ? { "data-active": "" } : {})} onClick={() => { setTab("mine"); setActivePlaylist(null); }}>
-                        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 5-5.5 8-5.5s6.5 1.5 8 5.5" /></svg>
-                        <span>我的</span>
-                    </button>
-                )}
-                <button className="music-tabbar-item" {...(tab === "local" ? { "data-active": "" } : {})} onClick={() => { setTab("local"); setActivePlaylist(null); }}>
-                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-                    <span>本地</span>
-                </button>
-            </div>
+            {/* Three primary destinations; search and local remain child pages. */}
+            <nav className={"music-tabbar " + privateStyles.dockGlass} aria-label="音乐导航" data-selection={tab === "together" ? "1" : tab === "mine" || tab === "local" ? "2" : "0"}>
+                {([{ id: "recommend", name: "发现", icon: <Search size={20} /> }, { id: "together", name: "一起听", icon: <Headphones size={20} /> }, { id: "mine", name: "我的", icon: <Music size={20} /> }] as const).map(item => (
+                    <button key={item.id} className="music-tabbar-item" aria-current={(tab === item.id || (item.id === "recommend" && tab === "search") || (item.id === "mine" && tab === "local")) ? "page" : undefined}
+                        {...((tab === item.id || (item.id === "recommend" && tab === "search") || (item.id === "mine" && tab === "local")) ? { "data-active": "" } : {})}
+                        onClick={() => { setTab(item.id); setActivePlaylist(null); setDailyView(null); }}>{item.icon}<span>{item.name}</span></button>
+                ))}
+            </nav>
             </div>
 
             {/* Settings Modal */}
@@ -556,8 +566,7 @@ function RecommendTab({ formatTime, onPlayNetease, onPlayAll, onGoSearch, onOpen
         <div className="music-discovery">
             {/* Greeting + search entry */}
             <div className="music-greet">
-                <div className="music-greet-hello">{greeting.hello}</div>
-                <div className="music-greet-sub">{dailySongs.length > 0 ? `根据你的口味，今天更新了 ${dailySongs.length} 首推荐` : greeting.sub}</div>
+                <div className="music-greet-hello">{greeting.hello}{resolveUserIdentity()?.name ? `，${resolveUserIdentity()?.name}` : ""}</div>
                 <button className="music-search-pill" onClick={onGoSearch}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
                     <span>{hotSearches[0]?.keyword || "搜索歌曲、歌手、歌单"}</span>
@@ -707,7 +716,7 @@ function DailySongsPage({ songs, player, formatTime, onPlayNetease, onPlayAll }:
 }
 
 // ── Mine Tab（网易云「我的」页式排版：全部真数据，拿不到的板块直接隐藏） ──
-function MineTab({ player, formatTime, onPlayNetease, onPlayAll, activePlaylist, setActivePlaylist, playlists, loading, onToast, onGoLocal, onOpenSettings }: {
+function MineTab({ player, formatTime, onPlayNetease, onPlayAll, activePlaylist, setActivePlaylist, playlists, loading, onToast, onGoLocal }: {
     player: MusicControlsValue;
     formatTime: (s: number) => string;
     onPlayNetease: (r: NeteaseSearchResult) => void;
@@ -718,7 +727,6 @@ function MineTab({ player, formatTime, onPlayNetease, onPlayAll, activePlaylist,
     loading: boolean;
     onToast: (text: string) => void;
     onGoLocal: () => void;
-    onOpenSettings: () => void;
 }) {
     const [weekRecords, setWeekRecords] = useState<NeteasePlayRecord[]>(() => readMusicCache("music-user-week-records", []));
     const [userDetail, setUserDetail] = useState<NeteaseUserDetail | null>(() => readMusicCache("music-user-detail", null));
@@ -880,10 +888,6 @@ function MineTab({ player, formatTime, onPlayNetease, onPlayAll, activePlaylist,
                         <button onClick={() => { setMineTab("music"); setMineSub("created"); }}>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h13" /><path d="M3 12h9" /><path d="M3 18h6" /><circle cx="17.5" cy="17" r="2.5" /><path d="M20 17V9l3-1" /></svg>
                             歌单
-                        </button>
-                        <button onClick={onOpenSettings}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 21v-6" /><path d="M5 11V3" /><path d="M12 21v-9" /><path d="M12 8V3" /><path d="M19 21v-4" /><path d="M19 13V3" /><path d="M3 15h4" /><path d="M10 8h4" /><path d="M17 17h4" /></svg>
-                            设置
                         </button>
                     </div>
                 </div>
@@ -1658,12 +1662,9 @@ function MusicSettingsTab({ onBack, onSaved }: { onBack: () => void; onSaved: ()
             </div>
 
             <div className="music-settings-body">
-                <div className="music-settings-section">
+                <div className="music-settings-section" style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                     <div className="music-settings-label">悬浮播放器</div>
-                    <div className="music-settings-hint">关闭后音乐继续播放，桌面组件仍可控制。选择自动保存。</div>
-                    <button className="music-settings-btn" role="switch" aria-label="悬浮播放器" aria-checked={player.floatEnabled} onClick={() => player.setFloatEnabled(!player.floatEnabled)}>
-                        {player.floatEnabled ? "已开启 · 点击关闭" : "已关闭 · 点击开启"}
-                    </button>
+                    <Toggle ariaLabel="悬浮播放器" checked={player.floatEnabled} onChange={player.setFloatEnabled} />
                 </div>
                 <div className="music-settings-section">
                     <div className="music-settings-label">网易云 API 地址</div>

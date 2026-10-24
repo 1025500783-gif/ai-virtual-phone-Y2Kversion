@@ -69,7 +69,7 @@ export function dbDeleteCommentsByPost(postId: string): void {
 // ── Whole-collection replace (for the array-level save APIs) ──
 
 export function dbReplacePosts(posts: MomentPost[]): void {
-    momentsDb.transaction("rw", momentsDb.posts, async () => {
+    momentsDb.transaction("rw", "posts", async () => {
         await momentsDb.posts.clear();
         await momentsDb.posts.bulkPut(posts);
     }).catch(err => console.warn("[MomentsDB] replace posts failed:", err));

@@ -7,6 +7,13 @@ function load(file, mocks = {}) {
     return exports;
 }
 const music = load('lib/music-listening.ts');
+const sharingProtocol = load('lib/music-sharing-protocol.ts');
+const defaultPreset = load('lib/builtin-preset.ts', {
+    './music-sharing-protocol': sharingProtocol,
+    './checkphone-config': { getCheckPhonePromptTags: () => [] },
+}).createBuiltinPreset();
+assert(!JSON.stringify(defaultPreset).includes(sharingProtocol.MUSIC_SHARING_ACTION_GUIDANCE), 'runtime music capability does not rewrite role presets');
+let viewedRankFact = '';
 const track = { id: 'song-a', title: '测试歌曲', artist: '歌手', lyrics: '[00:30.00]最前一句\n[00:38.50]上一句的海\n[00:44.00]此刻的蓝\n[00:50.00]未来的天', duration: 90 };
 let owner = 'A', active = true;
 let snapshot = { identityId: 'A', currentTrack: track, currentTime: 45, isPlaying: true };
@@ -68,8 +75,10 @@ vm.createContext(runtime);
 vm.runInContext(ts.transpileModule(pushSource, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, runtime);
 snapshot = { ...snapshot, currentTrack: track, currentTime: 45 };
 const chat = {
-    retryVersionRunRef: { current: false },
     ...runtime, pushChatMessage: runtime.pushChatMessage, session: { id: 'fixture' }, isGenerating: false,
+    retryVersionRunRef: { current: false },
+    setPendingTextTransforms() {}, resolveGroupMentions: load('lib/group-mentions.ts').resolveGroupMentions,
+    groupCharMap: new Map(),
     quotingMessage: null, ensureGroupSpeakPermission: () => true, cancelFollowUp() {},
     loadChatMessages: () => cache, getQuotePreview: () => '歌词', setQuotingMessage() {},
     captureMusicListeningContext: capture,
@@ -87,7 +96,7 @@ vm.runInContext(ts.transpileModule(`var handleSendText = ${extract('components/c
     await new Promise(resolve => setImmediate(resolve));
     assert.ok(!writes.at(-1).listeningContext, "ordinary asynchronous send has no music snapshot");
 
-    assert.equal(publishes.at(-1), false);
+    assert.equal(publishes.at(-1), true, 'published messages can enter the opt-in idle reply flow without an immediate model call');
     chat.quotingMessage = { id: 'lyric-draft', listeningContext: quote };
     chat.handleSendText('这句像你', { autoReply: false });
     await new Promise(resolve => setImmediate(resolve));
@@ -97,7 +106,7 @@ vm.runInContext(ts.transpileModule(`var handleSendText = ${extract('components/c
 
     const time = load('lib/character-time.ts');
     const assembler = load('lib/llm-prompt-assembler.ts', {
-        './listen-together': { listeningRoomPrompt: () => '' },
+        './listen-together': { ...sharingProtocol, listeningRoomPrompt: () => viewedRankFact },
         './music-listening': music,
         './macro-engine': load('lib/macro-engine.ts', { './character-time': time }),
         './character-time': time,
@@ -107,10 +116,9 @@ vm.runInContext(ts.transpileModule(`var handleSendText = ${extract('components/c
         './dwelling-storage': { readDwellingLayoutCache: () => null },
         './voice-expression': { voiceExpressionInstruction: () => '' },
         './chat-quotation': load('lib/chat-quotation.ts'),
-        './preset-scope': load('lib/preset-scope.ts'),
         './currency-context': { walletCurrencyInstruction: () => '' },
         './photo-album-discussion': { albumChatContext: () => '' },
-        './memory-storage': { loadMemoryConfig: () => ({  }) },
+        './memory-storage': { loadMemoryConfig: () => ({ cognitionEnabled: false }) },
         './moments-storage': { loadMomentsConfig: () => ({ bilingualTranslationEnabled: false }) },
         './moments-bilingual': { buildMomentsBilingualInstruction: () => '' },
         './chat-echo': { echoHistoryText: (_m, body) => body },
@@ -120,6 +128,7 @@ vm.runInContext(ts.transpileModule(`var handleSendText = ${extract('components/c
     const character = { id: 'C', name: 'C', persona: '沉稳' };
     const base = { character, history: [writes[0]], worldBooks: [], regexes: [], preset: null, appId: 'chat', appTags: ['chat', 'text'], userIdentity: { id: 'A', name: 'A' }, timeAware: false };
     const privatePrompt = assembler.assemblePromptPayload(base);
+    assert.equal(privatePrompt.find(message => message._debugMeta?.marker === 'character_listening_invite').content, sharingProtocol.CHARACTER_LISTENING_INVITE_PROTOCOL, 'the current sharing/invitation distinction enters real online chat requests');
     const sharedSong = { ...writes[0], listeningContext: undefined, mediaType: 'music_share', mediaData: { musicTitle: 'Song', musicArtist: 'Singer' } };
     assert.equal(assembler.formatRichMediaForHistory(sharedSong, 'A', 'C'), '[音乐分享:Song|Singer]\n' + sharedSong.content.trim());
     assert.equal(assembler.formatRichMediaForHistory({ ...sharedSong, content: '' }, 'A', 'C'), '[音乐分享:Song|Singer]');
@@ -148,5 +157,11 @@ vm.runInContext(ts.transpileModule(`var handleSendText = ${extract('components/c
     const explicit = assembler.assemblePromptPayload({ ...base, history: [writes[1]] }).map(m => m.content).join('\n');
     assert.match(explicit, /明确引用 00:38：上一句的海/);
     assert.doesNotMatch(explicit, /当前 00:44|当前 00:50|未来的天/);
+    viewedRankFact = '你在一起听开始时看了自己的榜单：展示520徽章（单次有效一起听满520秒；试戴，未验证达成）。是否提起由你决定。';
+    const viewedPayload = assembler.assemblePromptPayload(base);
+    const rankBlock = viewedPayload.find(message => message._debugMeta?.marker === 'listen_together');
+    assert.equal(rankBlock.content, viewedRankFact, 'the viewed rank snapshot reaches the actual private request payload');
+    viewedRankFact = '';
+    assert(!assembler.assemblePromptPayload(base).some(message => message._debugMeta?.marker === 'listen_together'), 'no standing badge injection after a viewed fact is consumed');
     console.log('PASS: no automatic snapshots; explicit quotes retained; legacy snapshots ignored; explicit lyric precedence after song changes, identity guard, LRC repeats/gaps/missing timing, actual asynchronous send + persistence boundary, real private/group prompts; zero model/network calls.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -55,3 +55,9 @@
 .audienceList input { margin-left:auto; appearance:none; width:24px; height:24px; border:1.5px solid var(--muted); border-radius:50%; display:grid; place-items:center; flex-shrink:0; }
 .audienceList input:checked { border-color:#fa2d55; background:#fa2d55; }
 .audienceList input:checked::after { content:""; width:6px; height:11px; border:solid white; border-width:0 2px 2px 0; transform:translateY(-1px) rotate(45deg); }
+
+/* Chat forwarding follows the neutral action surface of the original forward panel. */
+.sheet[data-share-kind=chat_record] .primary,.sheet[data-share-kind=chat_record] .done button{background:var(--im26-control-surface,var(--line));color:var(--ink);box-shadow:none}
+.sheet[data-share-kind=chat_record] :focus-visible{outline-color:currentColor}.sheet[data-share-kind=chat_record] .batch button{color:var(--ink)}.sheet[data-share-kind=chat_record] .audienceList input:checked{background:var(--ink);border-color:var(--ink)}
+
+.sheet[data-share-kind=chat_record] .audienceList input:checked::after{border-color:var(--c-page-body-bg,#fff)}

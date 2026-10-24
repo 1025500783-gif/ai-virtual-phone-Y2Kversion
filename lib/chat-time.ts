@@ -1,5 +1,10 @@
 const WEEKDAY_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 
+export function shouldShowTimestamp(currentMsg: string, prevMsg: string | null): boolean {
+    if (!prevMsg) return true;
+    return new Date(currentMsg).getTime() - new Date(prevMsg).getTime() > 60_000;
+}
+
 function padTwo(n: number): string {
     return n < 10 ? `0${n}` : `${n}`;
 }

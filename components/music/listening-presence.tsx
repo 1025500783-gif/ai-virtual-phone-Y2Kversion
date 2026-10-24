@@ -1,27 +1,25 @@
 "use client";
 import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { getListeningRoom, subscribeListeningRoom, leaveListeningRoom } from "@/lib/listen-together";
+import { getListeningRoom, subscribeListeningRoom, leaveListeningRoom, joinGroupListeningAsUser } from "@/lib/listen-together";
 import { loadCharacters } from "@/lib/character-storage";
-import { loadChatSessions, pushChatMessage } from "@/lib/chat-storage";
+import { getChatSessionMetadata, pushChatMessage } from "@/lib/chat-storage";
 import { resolveUserIdentity } from "@/lib/settings-storage";
 import { getChatCharacterAvatar } from "@/lib/chat-session-avatar";
 import { getChatImageFromIndexedDB } from "@/lib/chat-asset-storage";
 import { useMusicControlsOptional } from "@/lib/music-context";
+import { extractListeningColor, LISTENING_COLOR_FALLBACK } from "@/lib/listening-cover-color";
 import { X } from "lucide-react";
+import { useActivityAvatarUpdates } from "@/components/use-activity-avatar-updates";
 const serverSnapshot = () => null;
 export function useListeningPresence() {
-    const [, refresh] = useState(0);
-    useEffect(() => {
-        const update = () => refresh(value => value + 1);
-        const events = ["chat-session-avatars-updated", "chat-characters-updated", "settings-bindings-updated"];
-        events.forEach(event => window.addEventListener(event, update));
-        return () => events.forEach(event => window.removeEventListener(event, update));
-    }, []);
+    useActivityAvatarUpdates();
     const room = useSyncExternalStore(subscribeListeningRoom, getListeningRoom, serverSnapshot);
-    const character = room ? loadCharacters().find(c => c.id === room.characterId) : null;
-    const session = room ? loadChatSessions().find(s => s.id === room.sessionId) : null;
-    const user = resolveUserIdentity();
-    return { room: room?.status === "declined" ? null : room, name: session?.alias || character?.name || "对方", avatar: getChatCharacterAvatar(session, character), userName: user?.name || "你", userAvatar: user?.avatarUrl };
+    const characters = loadCharacters();
+    const character = room ? characters.find(c => c.id === room.characterId) : null;
+    const session = room ? getChatSessionMetadata().find(s => s.id === room.sessionId) : null;
+    const user = resolveUserIdentity(session?.contactId, session?.isGroup ? "group_chat" : "chat");
+    const members = room?.isGroup ? (room.members || []).map(m => {const c=characters.find(c=>c.id===m.characterId);return {...m,name:c?.name || "群成员",avatar:getChatCharacterAvatar(session,c)};}) : [];
+    return { members, room: room?.status === "declined" ? null : room, name: room?.isGroup ? session?.groupName || "群聊" : session?.alias || character?.name || "对方", avatar: room?.isGroup ? session?.groupAvatar : getChatCharacterAvatar(session, character), userName: user?.name || "你", userAvatar: user?.avatarUrl };
 }
 export function ListeningAvatar({ src, name }: { src?: string | null; name: string }) {
     const [resolved, setResolved] = useState<string | null>(null);
@@ -34,6 +32,24 @@ export function ListeningAvatar({ src, name }: { src?: string | null; name: stri
         return () => { alive = false; };
     }, [src]);
     return resolved ? <img src={resolved} alt="" draggable={false} onError={() => setResolved(null)} /> : <span>{name.slice(0, 1)}</span>;
+}
+export function ListeningDuration({ startedAt }: { startedAt: number }) {
+    const [now, setNow] = useState(Date.now);
+    useEffect(() => {
+        setNow(Date.now());
+        const timer = window.setInterval(() => setNow(Date.now()), 15000);
+        return () => window.clearInterval(timer);
+    }, [startedAt]);
+    const minutes = Math.max(0, Math.floor((now - startedAt) / 60000));
+    return <span>{minutes < 1 ? "一起听 · 此刻开始" : `一起听了 ${minutes >= 60 ? `${Math.floor(minutes / 60)} 小时 ` : ""}${minutes % 60} 分钟`}</span>;
+}
+export function ListeningDuet({ userAvatar, userName, avatar, name, joined, playing }: {
+    userAvatar?: string | null; userName: string; avatar?: string | null; name: string; joined: boolean; playing: boolean;
+}) {
+    return <span className="listening-duet" data-joined={joined} data-playing={playing} aria-hidden="true">
+        <span className="listening-duet-person"><span className="listening-duet-photo"><ListeningAvatar src={userAvatar} name={userName} /></span></span>
+        <span className="listening-duet-person"><span className="listening-duet-photo"><ListeningAvatar src={avatar} name={name} /></span></span>
+    </span>;
 }
 // Decorative spectrum: fixed radial bars change length; neither the ring nor color rotates.
 const spectrumBars = Array.from({ length: 64 }, (_, index) => {
@@ -58,11 +74,19 @@ function ListeningWaveRing() {
 }
 
 export function ListeningPlanets({ presence, playing }: { presence: ReturnType<typeof useListeningPresence>; playing: boolean }) {
+    const player = useMusicControlsOptional();
+    const [color,setColor] = useState(LISTENING_COLOR_FALLBACK);
+    const cover = player?.currentTrack?.coverUrl;
+    useEffect(()=>{let alive=true;extractListeningColor(cover).then(value=>{if(alive)setColor(value);});return()=>{alive=false;};},[cover]);
     if (!presence.room) return null;
-    return <div className="listening-planets" aria-hidden="true" data-orbiting={presence.room.status === "joined" && playing ? "true" : "false"}>
+    const joined = presence.members.filter(m => m.status === "joined");
+    return <div className="listening-planets" style={{"--listening-cover-color":color} as CSSProperties} aria-hidden="true" data-orbiting={presence.room.status === "joined" && playing ? "true" : "false"}>
         <ListeningWaveRing />
-        <span className="listening-orbit listening-orbit-user"><span className="listening-planet"><ListeningAvatar src={presence.userAvatar} name={presence.userName} /></span></span>
-        <span className="listening-orbit listening-orbit-char"><span className="listening-planet"><ListeningAvatar src={presence.avatar} name={presence.name} /></span></span>
+        {presence.room.userJoined !== false && <span className="listening-orbit listening-orbit-user"><span className="listening-planet"><ListeningAvatar src={presence.userAvatar} name={presence.userName} /></span></span>}
+        {presence.room.isGroup ? <>
+            {joined.slice(0,2).map((m,index)=><span key={m.characterId} className={"listening-orbit " + (index ? "listening-orbit-third" : "listening-orbit-char")}><span className="listening-planet"><ListeningAvatar src={m.avatar} name={m.name}/></span></span>)}
+            {joined.length > 2 && <span className="listening-planet-more">+{joined.length-2}</span>}
+        </> : <span className="listening-orbit listening-orbit-char"><span className="listening-planet"><ListeningAvatar src={presence.avatar} name={presence.name} /></span></span>}
     </div>;
 }
 export function ListeningPlayerPresence() {
@@ -72,11 +96,11 @@ export function ListeningPlayerPresence() {
     const room = presence.room;
     useEffect(() => setOpen(false), [room?.id]);
     if (!room) return null;
-    const label = room.status === "invited" ? `等待${presence.name}加入` : `正在和${presence.name}一起听`;
+    const label = room.userJoined === false ? `${presence.name}的一起听` : room.status === "invited" ? `等待${presence.name}加入` : `和${presence.name}一起听`;
     return <>
         <button className="listening-player-presence" onClick={() => setOpen(true)} aria-label={label + "，查看成员"}>
-            <span className="listening-avatar-pair"><span><ListeningAvatar src={presence.userAvatar} name={presence.userName} /></span><span><ListeningAvatar src={presence.avatar} name={presence.name} /></span></span>
-            <span>{label}</span>
+            <ListeningDuet userAvatar={presence.userAvatar} userName={presence.userName} avatar={presence.avatar} name={presence.name} joined={room.status === "joined"} playing={!!player?.isPlaying} />
+            <span className="listening-presence-copy"><strong>{label}</strong><small>{room.status === "joined" ? <ListeningDuration startedAt={room.startedAt} /> : "等待回应"}</small></span>
         </button>
         {open && <div className="listening-members-overlay" onClick={() => setOpen(false)} onKeyDown={e => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } }}>
             <div className="listening-members" role="dialog" aria-modal="true" aria-label="一起听成员" onClick={e => e.stopPropagation()} onKeyDown={e => {
@@ -87,15 +111,16 @@ export function ListeningPlayerPresence() {
                 else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
             }}>
                 <header><strong>一起听</strong><button autoFocus aria-label="关闭成员面板" onClick={() => setOpen(false)}><X size={20} /></button></header>
-                <div className="listening-member"><span className="listening-member-avatar"><ListeningAvatar src={presence.userAvatar} name={presence.userName} /></span><span>{presence.userName}<small>你</small></span></div>
-                <div className="listening-member"><span className="listening-member-avatar"><ListeningAvatar src={presence.avatar} name={presence.name} /></span><span>{presence.name}<small>{room.status === "invited" ? "邀请中" : player?.isPlaying ? "一起听中" : "音乐已暂停"}</small></span></div>
+                <div className="listening-member"><span className="listening-member-avatar"><ListeningAvatar src={presence.userAvatar} name={presence.userName} /></span><span>{presence.userName}<small>{room.userJoined === false ? "尚未加入" : "你"}</small></span></div>
+                {room.isGroup ? presence.members.map(m => <div className="listening-member" key={m.characterId}><span className="listening-member-avatar"><ListeningAvatar src={m.avatar} name={m.name}/></span><span>{m.name}<small>{m.status === "joined" ? "一起听中" : m.status === "invited" ? "等待加入" : "暂未加入"}</small></span></div>) : <div className="listening-member"><span className="listening-member-avatar"><ListeningAvatar src={presence.avatar} name={presence.name} /></span><span>{presence.name}<small>{room.status === "invited" ? "邀请中" : player?.isPlaying ? "一起听中" : "音乐已暂停"}</small></span></div>}
                 <button className="listening-end" onClick={() => {
                     if (getListeningRoom()?.id !== room.id) return;
+                    if (room.isGroup && room.userJoined === false) { joinGroupListeningAsUser(room.sessionId); setOpen(false); return; }
                     leaveListeningRoom(room.sessionId);
-                    pushChatMessage({ sessionId: room.sessionId, role: "system", content: room.status === "invited" ? "用户取消了一起听邀请。" : "用户结束了一起听。" });
+                    pushChatMessage({ sessionId: room.sessionId, role: "system", content: room.status === "invited" ? "用户取消了一起听邀请。" : room.isGroup ? "用户退出了一起听。" : "用户结束了一起听。" });
                     window.dispatchEvent(new CustomEvent("chat-messages-updated", { detail: { sessionId: room.sessionId } }));
                     setOpen(false);
-                }}>{room.status === "invited" ? "取消邀请" : "结束一起听"}</button>
+                }}>{room.isGroup && room.userJoined === false ? "加入一起听" : room.status === "invited" ? "取消邀请" : room.isGroup ? "退出一起听" : "结束一起听"}</button>
             </div>
         </div>}
     </>;

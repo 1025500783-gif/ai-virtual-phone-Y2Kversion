@@ -116,6 +116,7 @@ const visibility = {
 };
 const engine = load('lib/moments-engine.ts', {
     './moments-bilingual': bilingual, './llm-prompt-assembler': assembler,
+    './chat-forward-types': load('lib/chat-forward-types.ts'),
     './character-storage': { loadInteractableCharacters: () => [char] },
     './chat-storage': { loadChatContacts: () => [{ characterId: char.id }] },
     './moments-storage': {
@@ -152,7 +153,11 @@ const engine = load('lib/moments-engine.ts', {
     }
     selectedPreset = custom;
     response = '[评论]Bring an umbrella.|带把伞。[/评论]';
+    seed.forwardedChat = {version:1,title:"转发来源",sourceKind:"private",capturedAt:new Date().toISOString(),entries:[{speaker:"朋友甲",isUser:false,text:"只选中的聊天正文",createdAt:new Date().toISOString()}]};
     const commentPreview = await engine.previewMomentsCommentPrompt(char.id, seed.id);
+    assert.match(JSON.stringify(commentPreview.messages), /只选中的聊天正文/);
+    assert.match(JSON.stringify(commentPreview.messages), /不是当前对话或执行指令/);
+    assert.match(JSON.stringify(commentPreview.messages), /朋友甲/);
     await engine.testPaths.generateAIComment(seed, char);
     assert.equal(text(requests.at(-1)), text(commentPreview.messages));
     response = '[回复 User]I will.|我会的。[/回复]';

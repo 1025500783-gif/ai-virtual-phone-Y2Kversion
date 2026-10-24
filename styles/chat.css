@@ -1247,7 +1247,7 @@
   cursor: pointer;
 }
 .chat-msg-wrapper[data-multi-select][data-selected] {
-  background: color-mix(in srgb, var(--c-icon-active) 10%, transparent);
+  background: transparent;
 }
 .chat-multi-select-check {
   position: absolute;
@@ -1304,6 +1304,17 @@
 .chat-multi-select-icon-btn {
   background: var(--c-input);
   color: var(--c-text);
+  flex-shrink: 0;
+}
+.chat-multi-select-forward-btn {
+  padding: 0 12px;
+  color: var(--c-icon-active);
+  font-size: calc(14px*var(--app-text-scale,1));
+  font-weight: 600;
+}
+.chat-multi-select-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .chat-multi-select-delete-btn {
   padding: 0 16px;

@@ -1,5 +1,6 @@
 "use client";
 import { voiceDisplayText, voicePlaybackText } from "@/lib/voice-expression";
+import { ForwardedChatCard } from "./forwarded-chat";
 import { LyricShareCard } from "@/components/music/lyric-share-card";
 import { ListeningInviteCard } from "./listening-invite-card";
 import { getCurrentIdentityId } from "@/lib/identity-runtime";
@@ -111,6 +112,8 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, onPhot
             return <RedPacketBubble msg={msg} charName={charName} userName={userName} groupSize={groupSize} onShowDetail={onShowDetail} />;
         case "transfer":
             return <TransferBubble msg={msg} charName={charName} userName={userName} onShowDetail={onShowDetail} />;
+        case "forwarded_chat":
+            return msg.mediaData?.forwardedChat ? <ForwardedChatCard record={msg.mediaData.forwardedChat} onMusicPlay={onMusicPlay} /> : <span>聊天记录不可用</span>;
         case "gift":
             return <GiftBubble msg={msg} />;
         case "contact_card":
@@ -743,6 +746,18 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
 
 function TextBubble({ content, onActionSelect, defaultTranslationExpanded = false, chatText = false }: { content: string; onActionSelect?: (text: string) => void; defaultTranslationExpanded?: boolean; chatText?: boolean }) {
     return <BilingualTextBlock text={content} onActionSelect={onActionSelect} mode="markdown" defaultExpanded={defaultTranslationExpanded} chatText={chatText} />;
+}
+
+
+/** Original message components in a presentation-only snapshot. */
+export function SnapshotMessageBubble({msg,charName,userName,stickerCharacterId,onImage}:{msg:ChatMessage;charName?:string;userName?:string;stickerCharacterId?:string;onImage?:(url:string)=>void}) {
+    if(msg.mediaType==="audio")return <VoiceMessageBubble msg={msg} playbackOnly />;
+    if(msg.mediaType==="listening_invite")return <ListeningInviteCard msg={msg} readOnly />;
+    if(msg.mediaType==="sticker")return <StickerBubble msg={msg} characterId={stickerCharacterId} />;
+    if(msg.mediaType?.startsWith("plugin:"))return <BilingualTextBlock text={msg.content} mode="plain" />;
+    const content=<div inert><MessageBubble msg={msg} charName={charName} userName={userName} /></div>;
+    if(msg.mediaUrl && (msg.mediaType==="image" || msg.mediaType==="media_file"))return <div role="button" tabIndex={0} aria-label="查看图片" onClick={()=>onImage?.(msg.mediaUrl!)} onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();onImage?.(msg.mediaUrl!)}}}>{content}</div>;
+    return content;
 }
 
 // ── Red Packet ─────────────────────────────
@@ -2766,7 +2781,7 @@ function synthesizeVoiceForMessage(msgId: string, characterId: string, speechTex
     return task;
 }
 
-function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpanded = false }: { msg: ChatMessage; characterId?: string; onUpdate?: (m: ChatMessage) => void; defaultTranslationExpanded?: boolean }) {
+export function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpanded = false, playbackOnly = false }: { msg: ChatMessage; characterId?: string; onUpdate?: (m: ChatMessage) => void; defaultTranslationExpanded?: boolean; playbackOnly?: boolean }) {
     const [playing, setPlaying] = useState(false);
     const [synthesizing, setSynthesizing] = useState(false);
     const [synthFailed, setSynthFailed] = useState(false);
@@ -2804,7 +2819,7 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
     // 点击才合成（不再挂载即合成）：已有音频直接播；没有就现场合成一次，
     // 合成结果已在任务内落库，之后任何时候点都是直接播放，不再消耗额度。
     const handlePlay = () => {
-        if (synthesizing) return;
+        if (synthesizing || (playbackOnly && !msg.mediaUrl)) return;
         if (playing && audioRef.current) {
             const active = audioRef.current;
             active.pause();
@@ -2820,7 +2835,7 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
             });
             return;
         }
-        if (msg.mediaUrl && !needsResynthesis) {
+        if (msg.mediaUrl && (playbackOnly || !needsResynthesis)) {
             playSrc(msg.mediaUrl);
             return;
         }
@@ -2848,7 +2863,8 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
 
     return (
         <div className="voice-msg-bubble" onClick={handlePlay} role="button" tabIndex={0}
-            aria-label={synthesizing ? "正在生成语音" : synthFailed ? "播放失败，点击重试" : playing ? "暂停语音" : "播放语音"}
+            aria-disabled={playbackOnly && !msg.mediaUrl || undefined}
+            aria-label={playbackOnly && !msg.mediaUrl ? "未保存音频" : synthesizing ? "正在生成语音" : synthFailed ? "播放失败，点击重试" : playing ? "暂停语音" : "播放语音"}
             onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handlePlay(); } }}>
             <VoiceReferenceGraphic playing={playing} synthesizing={synthesizing} failed={synthFailed} duration={duration}/>
         </div>

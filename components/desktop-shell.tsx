@@ -17,6 +17,7 @@ import { PhonePlaceholderApp } from "@/components/phone-placeholder-app";
 import MusicApp from "@/components/music/music-app";
 import MusicPlayer from "@/components/music/music-player";
 import MusicFloat from "@/components/music/music-float";
+import { ListeningGlow } from "@/components/music/listening-glow";
 import ShareDestinationSheet from "@/components/chat/share-destination-sheet";
 import QuickReplyWindow from "@/components/chat/quick-reply-window";
 import MiniAppWindow from "@/components/music/mini-app-window";
@@ -1043,6 +1044,7 @@ const MusicShellOverlays = memo(function MusicShellOverlays({
     <>
       {musicPlayer?.showFullPlayer && musicPlayer.currentTrack && <MusicPlayer />}
       <MusicFloat hidden={activeApp === "music" || musicPlayer?.showFullPlayer} />
+      <ListeningGlow />
     </>
   );
 });
@@ -2965,7 +2967,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
       const topCol = cell.col - drag.grabCellCol;
       // Allow drop indicator as long as the widget bounds fit INSIDE the grid visually
       if (topRow < 0 || topCol < 0 || topRow + wRows > GRID_ROWS || topCol + wCols > GRID_COLS) return;
-      
+
       const key = `${pageKey}:${topRow}:${topCol}`;
       if (key === drag.lastTargetKey) return;
       drag.lastTargetKey = key;
@@ -4921,7 +4923,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
                         </div>
                       );
                     })}
-                    
+
                     {widgetPickerTab === "freestyle" && mergedCatalog.filter(e => e.track === "freestyle").map(entry => {
                       const sizeClass = `wm-cat-size-${entry.size}`;
                       const dummyWidget: WidgetInstance = { id: `pick-${entry.type}`, type: entry.type, size: entry.size, page: 1, row: 1, col: 1 };

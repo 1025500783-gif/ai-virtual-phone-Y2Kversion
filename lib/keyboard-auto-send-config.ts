@@ -1,11 +1,12 @@
 import { identityLocalStorage } from "@/lib/identity-runtime";
-// 「收起键盘自动触发回复」的独立配置。
+// 发消息后闲时自动回复。保留旧存储键和导出名，继承各聊天原有开关与等待时间。
 // 刻意不复用 settings-storage：整个功能只由新增文件 + 少量纯插入组成，
 // 与主设置文件互不影响，全部关闭时行为与原版完全一致。
 //
 // 开关和等待秒数都按聊天窗口（sessionId）各存各的：设置页本来就是单个聊天的，
 // 在哪拨开就只对哪个聊天生效，「这个角色开、那个角色不开」天然成立。
 const CONFIG_KEY = "float_keyboard_auto_send_v1";
+export const IDLE_REPLY_CONFIG_UPDATED = "chat-idle-reply-config-updated";
 
 export interface KeyboardAutoSendConfig {
     /** 按会话的开关。缺省 = 关（不改变任何存量行为）。key = sessionId。 */
@@ -56,9 +57,10 @@ export function loadKeyboardAutoSendConfig(): KeyboardAutoSendConfig {
 
 function saveConfig(config: KeyboardAutoSendConfig): void {
     try { identityLocalStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch { /* ignore */ }
+    window.dispatchEvent(new Event(IDLE_REPLY_CONFIG_UPDATED));
 }
 
-/** 该会话是否开启了收起键盘自动触发（缺省关）。 */
+/** 该会话是否开启发送后闲时自动回复（缺省关）。 */
 export function isKeyboardAutoSendEnabled(sessionId: string): boolean {
     return loadKeyboardAutoSendConfig().sessionEnabled[sessionId] === true;
 }
