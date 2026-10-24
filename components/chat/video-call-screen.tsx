@@ -50,7 +50,7 @@ type VideoCallScreenProps = {
 function stripBilingualForSpeech(text: string): string {
     return text
         .split("\n")
-        .map(line => splitBilingualText(line)?.original || line)
+        .map(line => splitBilingualText(line, { allowUnchangedTranslation: true })?.original || line)
         .join("\n");
 }
 
@@ -406,9 +406,9 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
             const displayText = voiceDisplayText(spokenText);
             const speechText = voiceSpeechText(stripBilingualForSpeech(spokenText));
 
-            if (!displayText) { setCallState("IDLE"); return; }
+            if (!displayText && !speechText) { setCallState("IDLE"); return; }
 
-            setSubtitles(prev => [...prev, { id: `ai-${Date.now()}`, role: "assistant", text: displayText }]);
+            if (displayText) setSubtitles(prev => [...prev, { id: `ai-${Date.now()}`, role: "assistant", text: displayText }]);
             setCallState("AI_SPEAKING");
 
             const voiceConfig = resolveVoiceConfig(session.contactId);

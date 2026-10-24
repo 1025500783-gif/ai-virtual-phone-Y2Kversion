@@ -1,3 +1,5 @@
+import { matchesPromptScope } from "./preset-scope";
+import { lifePrompt, lifeScope, applyLifeOutput, createLifeStreamFilter } from "./user-portrait-context";
 import { registerIdentityRequest } from "./identity-runtime";
 // lib/chat-engine.ts
 
@@ -563,8 +565,7 @@ function presetIncludesToolsMacro(preset: PresetConfig | null, appId: string, ap
         if (!isPresetPromptEnabled(prompt, preset.prompt_order)) return false;
         if (!/\{\{\s*tools\s*\}\}/.test(prompt.content)) return false;
         if (prompt.marker) return true;
-        const promptTags = getPromptFilterTags(prompt);
-        return !promptTags || promptTags.every(tag => activeTags.includes(tag));
+        return matchesPromptScope(prompt, activeTags);
     });
 }
 
@@ -914,15 +915,18 @@ export async function sendLLMStreamRequest(
     },
     callbacks?: ChatCompletionStreamCallbacks,
 ): Promise<ChatCompletionStreamResult> {
+    const lifeRequestScope = lifeScope(options?.debugSessionId, messages, options?.signal);
     const pluginPurpose = options?.appId ?? "chat";
     const afterPlugins = await applyChatPluginLlmRequest(preset, messages, pluginPurpose, options?.debugSessionId);
     const effectivePreset = afterPlugins.preset;
+    const lifeStream = lifeRequestScope ? createLifeStreamFilter() : null;
     const originalOnDelta = callbacks?.onDelta;
     const pluginCallbacks: ChatCompletionStreamCallbacks | undefined = callbacks ? {
         ...callbacks,
         onDelta: (text: string) => {
             emitChatPluginEvent("llm.streamChunk", { chunk: text, sessionId: options?.debugSessionId, purpose: pluginPurpose });
-            return originalOnDelta?.(text);
+            const visible = lifeStream ? lifeStream.push(text) : text;
+            if (visible) return originalOnDelta?.(visible);
         },
     } : undefined;
     const requestMessages = toLlmRequestMessages(afterPlugins.messages);
@@ -951,11 +955,13 @@ export async function sendLLMStreamRequest(
             },
         };
         const { content: streamedContent, rawResponse } = await readSseStream(response, request.providerKind, streamLogCallbacks, !options?.skipTimestampStrip);
+        const streamTail = lifeStream?.flush();
+        if (streamTail) await originalOnDelta?.(streamTail);
         if (!streamedContent.trim()) {
             throw new ChatEngineError("流式响应没有解析到文本增量。");
         }
         let rawOutput = options?.skipTimestampStrip ? streamedContent.trim() : stripHallucinatedTimestamps(streamedContent.trim());
-        rawOutput = await applyChatPluginLlmResponse(rawOutput, pluginPurpose, options?.debugSessionId);
+        rawOutput = applyLifeOutput(await applyChatPluginLlmResponse(rawOutput, pluginPurpose, options?.debugSessionId), lifeRequestScope);
 
         // Store API log entry — mirror sendLLMRequest so streaming calls also show up
         // in the "底层调用大模型日志" panel. reasoning 单独存思维链原文，供「查看原始」直接展示。
@@ -1018,6 +1024,7 @@ export async function sendLLMRequest(
         signal?: AbortSignal;
     },
 ): Promise<string> {
+    const lifeRequestScope = lifeScope(options?.debugSessionId, messages, options?.signal);
     const pluginPurpose = options?.appId ?? "chat";
     const afterPlugins = await applyChatPluginLlmRequest(preset, messages, pluginPurpose, options?.debugSessionId);
     const effectivePreset = afterPlugins.preset;
@@ -1078,7 +1085,7 @@ export async function sendLLMRequest(
             }
         }
 
-        rawOutput = await applyChatPluginLlmResponse(rawOutput, pluginPurpose, options?.debugSessionId);
+        rawOutput = applyLifeOutput(await applyChatPluginLlmResponse(rawOutput, pluginPurpose, options?.debugSessionId), lifeRequestScope);
 
         if (!rawOutput && parsed.toolCalls.length === 0) {
             const emptyDetails = emptyResponseDetails(parsed.raw);
@@ -1216,6 +1223,7 @@ export async function sendLLMToolStreamRequest(
     callbacks?: ChatCompletionStreamCallbacks,
 ): Promise<LLMToolRequestResult> {
     void regexes;
+    const lifeRequestScope = lifeScope(options?.debugSessionId, messages, options?.signal);
     const pluginPurpose = options?.appId ?? "chat";
     const afterPlugins = await applyChatPluginLlmRequest(preset, messages, pluginPurpose, options?.debugSessionId);
     const effectivePreset = afterPlugins.preset;
@@ -1228,6 +1236,7 @@ export async function sendLLMToolStreamRequest(
     let rawResponse = "";
     let content = "";
     let reasoning = "";
+    const lifeStream = lifeRequestScope ? createLifeStreamFilter() : null;
     const contentStripper = createStreamingTimestampStripper();
     const toolDrafts = new Map<number, StreamToolCallDraft>();
     const firedToolCallStarts = new Set<number>();
@@ -1259,7 +1268,7 @@ export async function sendLLMToolStreamRequest(
                         if (cleanDelta) {
                             content += cleanDelta;
                             emitChatPluginEvent("llm.streamChunk", { chunk: cleanDelta, sessionId: options?.debugSessionId, purpose: pluginPurpose });
-                            await callbacks?.onDelta?.(cleanDelta);
+                            await callbacks?.onDelta?.(lifeStream ? lifeStream.push(cleanDelta) : cleanDelta);
                         }
                     }
                     for (const toolDelta of delta.toolCallDeltas || []) {
@@ -1308,9 +1317,11 @@ export async function sendLLMToolStreamRequest(
         const finalContent = contentStripper.flush();
         if (finalContent) {
             content += finalContent;
-            await callbacks?.onDelta?.(finalContent);
+            await callbacks?.onDelta?.(lifeStream ? lifeStream.push(finalContent) : finalContent);
         }
-        content = await applyChatPluginLlmResponse(content, pluginPurpose, options?.debugSessionId);
+        const lifeTail = lifeStream?.flush();
+        if (lifeTail) await callbacks?.onDelta?.(lifeTail);
+        content = applyLifeOutput(await applyChatPluginLlmResponse(content, pluginPurpose, options?.debugSessionId), lifeRequestScope);
 
         const sanitizedMessages = request.messagesForLog.map(m => ({
             ...m,
@@ -1372,6 +1383,7 @@ export async function sendLLMToolRequest(
         signal?: AbortSignal;
     },
 ): Promise<LLMToolRequestResult> {
+    const lifeRequestScope = lifeScope(options?.debugSessionId, messages, options?.signal);
     const pluginPurpose = options?.appId ?? "chat";
     const afterPlugins = await applyChatPluginLlmRequest(preset, messages, pluginPurpose, options?.debugSessionId);
     const effectivePreset = afterPlugins.preset;
@@ -1396,7 +1408,7 @@ export async function sendLLMToolRequest(
         if (options?.includeReasoning && parsed.reasoning) {
             rawOutput = `<think>\n${parsed.reasoning}\n</think>\n\n${rawOutput}`;
         }
-        rawOutput = await applyChatPluginLlmResponse(rawOutput, pluginPurpose, options?.debugSessionId);
+        rawOutput = applyLifeOutput(await applyChatPluginLlmResponse(rawOutput, pluginPurpose, options?.debugSessionId), lifeRequestScope);
 
         if (!rawOutput && parsed.toolCalls.length === 0) {
             const emptyDetails = emptyResponseDetails(parsed.raw);
@@ -2053,6 +2065,7 @@ export async function buildChatPromptMessages(
         tools: toolsPrompt,
         customAppRichMediaDirectives,
         chatBilingualInstruction,
+        quoteTranslationEnabled: session.quoteTranslationEnabled,
         statusRegionSection: resolveStatusRegionSection(statusRegionCfg),
         statusRegionExampleLine: resolveStatusRegionExampleLine(statusRegionCfg),
         statusRegionComposition: resolveStatusRegionComposition(statusRegionCfg),
@@ -2093,6 +2106,14 @@ export async function buildChatPromptMessages(
     }
     appendEmptyGenerateGuardMessage(llmMessages, config, historyForPrompt);
 
+    if (resolvedAppId === "chat" && !promptProfile) {
+        const portraitPrompt = lifePrompt(session, [], config.enableImageRecognition === true);
+        if (portraitPrompt) llmMessages.push({ role: "system", content: portraitPrompt });
+        if (config.enableImageRecognition && userIdentity?.portraitEnabled && userIdentity.portraitUrl && (!userIdentity.portraitDescription || promptHistory.some(m => m.role === "user" && m.mediaUrl))) {
+            const portrait = await resolveCompressedImageDataUrl(userIdentity.portraitUrl);
+            if (portrait) llmMessages.push({ role: "user", content: [{ type: "text", text: "[图片ID:user-portrait] 用户本人肖像参考；不是新聊天图片。请在 float_state.photos 中记录客观外貌描述，id 填 user-portrait。结合文字设定辨认，无法确定合照人物时询问。" }, { type: "image_url", image_url: { url: portrait, detail: "low" } }] });
+        }
+    }
     return { llmMessages, character, config, preset, regexes, userIdentity, toolsEnabled };
 }
 

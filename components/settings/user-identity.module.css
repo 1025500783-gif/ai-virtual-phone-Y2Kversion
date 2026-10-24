@@ -1,0 +1,30 @@
+.editor {
+  height: 88%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor > :first-child {
+  flex-shrink: 0;
+}
+
+.body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-block: 24px;
+  padding-bottom: max(32px, env(safe-area-inset-bottom));
+}
+
+.body > * {
+  flex-shrink: 0;
+}
+
+.body textarea {
+  min-height: 9rem;
+  font-size: 16px;
+  line-height: 1.6;
+  scroll-margin-block: 24px;
+}

@@ -34,6 +34,11 @@ export type PromptOrderEntry = {
 };
 
 export type Prompt = {
+    /** OR of scope alternatives; each alternative keeps its original AND tags.
+     * Undefined preserves legacy tags. [[]] explicitly means all apps. */
+    scopeAlternatives?: string[][];
+    /** Optional manual editor group. Never changes scope matching. */
+    displayGroup?: string | null;
     identifier: string;
     name: string;
     role: "system" | "user" | "assistant" | string;
@@ -55,6 +60,12 @@ export type Prompt = {
 };
 
 export type PresetConfig = SettingItemMeta & {
+    /** Editor-only names keyed by stable group ID; never part of model input. */
+    displayGroups?: Array<{ id: string; name: string }>;
+    /** Version 1 freezes initial/default grouping; later membership is always manual. */
+    groupingVersion?: 1;
+    /** Undefined preserves legacy requests; [] omits optional generation parameters. */
+    enabled_generation_parameters?: GenerationParameterKey[];
     builtIn?: boolean;
     builtInVersion?: number;
     temperature: number;
@@ -98,6 +109,9 @@ export type PresetConfig = SettingItemMeta & {
     prompt_order?: PromptOrderEntry[];
     prompts: Prompt[];
 };
+
+export type GenerationParameterKey = "temperature" | "top_p" | "top_k" | "min_p" | "top_a"
+    | "repetition_penalty" | "frequency_penalty" | "presence_penalty" | "max_tokens";
 
 // --- Regex ---
 // Regex rule config.
@@ -235,6 +249,8 @@ export type BindingSlot = {
     presetId?: string;
     userIdentityId?: string;
     worldBookIds?: string[];
+    /** Explicit selection in combined tools, including empty. Missing preserves legacy inheritance. */
+    worldBookMode?: "replace";
     regexIds?: string[];
 };
 

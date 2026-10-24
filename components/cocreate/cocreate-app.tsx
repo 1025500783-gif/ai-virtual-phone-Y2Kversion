@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import type { Character } from "@/lib/character-types";
-import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
+import { loadActivityCharacters as loadCharacters } from "@/lib/chat-app-characters";
 import {
   createCoCreateMessage,
   createDefaultCoCreateSettings,

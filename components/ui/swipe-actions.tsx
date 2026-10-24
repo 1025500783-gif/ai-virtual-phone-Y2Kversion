@@ -18,7 +18,7 @@ interface SwipeGesture {
     offset: number;
 }
 
-export function useSwipeActions(width = DEFAULT_ACTIONS_WIDTH) {
+export function useSwipeActions(width = DEFAULT_ACTIONS_WIDTH, closeDistance = width / 2) {
     const [swipingId, setSwipingId] = useState<string | null>(null);
     const [openId, setOpenId] = useState<string | null>(null);
     const gestureRef = useRef<SwipeGesture | null>(null);
@@ -69,7 +69,8 @@ export function useSwipeActions(width = DEFAULT_ACTIONS_WIDTH) {
         gestureRef.current = null;
         if (!g.locked) return;
         suppressClickRef.current = true;
-        const open = g.offset < -width / 2;
+        const closing = g.base < 0 && g.offset - g.base >= closeDistance;
+        const open = !closing && g.offset < -width / 2;
         const content = getContent(e.currentTarget);
         if (content) {
             content.style.transition = "transform 0.2s ease";

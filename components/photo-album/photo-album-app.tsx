@@ -26,7 +26,7 @@ import { editAlbumThought, rerollAlbumThought, notifyAlbumAnnotationChange, type
 
 import { PhotoMarkupEditor } from "@/components/chat/photo-markup-editor";
 import { ALBUM_DISCUSSION_UPDATED, addUserAlbumComment, getAlbumDiscussion, queueAlbumReview, saveAlbumDiscussion, unreadAlbumReplies, markAlbumRepliesRead } from "@/lib/photo-album-discussion";
-import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
+import { loadActivityCharacters as loadCharacters } from "@/lib/chat-app-characters";
 import { PhotoAlbumAnnotationLayer } from "@/components/photo-album/photo-album-annotation-layer";
 import { hydrateChatStorage } from "@/lib/chat-storage";
 import { hydrateKvDb } from "@/lib/kv-db";

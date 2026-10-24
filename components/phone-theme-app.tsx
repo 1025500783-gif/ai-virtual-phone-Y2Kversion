@@ -19,7 +19,7 @@ import CSSSchemeBar from "@/components/ui/css-scheme-picker";
 import { GlassIcon } from "@/components/ui/glass-icon";
 import { normalizeThemeProfile, resolveActiveIconSkins, DEFAULT_THEME_PROFILE, type ThemeProfile } from "@/lib/theme-types";
 import type { DesktopIconId, IconId } from "@/lib/desktop-config";
-import { DOCK_DEFAULT, PAGE_1_DEFAULT, PAGE_2_DEFAULT, PAGE_3_DEFAULT, ICONS } from "@/lib/desktop-config";
+import { DOCK_DEFAULT, PAGE_1_DEFAULT, PAGE_2_DEFAULT, PAGE_3_DEFAULT, PAGE_4_DEFAULT, ICONS } from "@/lib/desktop-config";
 import type { DesktopFolderMap, DesktopIconLayout } from "@/lib/desktop-layout-storage";
 import { CUSTOM_APPS_UPDATED_EVENT, loadInstalledCustomApps } from "@/lib/custom-app-storage";
 import { toCustomAppIconId, type InstalledCustomApp } from "@/lib/custom-app-types";
@@ -980,9 +980,8 @@ function GlobalCSSPage({
    Icon Skin Page
    ══════════════════════════════════════════ */
 
-// 三页桌面 + DOCK 的默认图标全收进来。漏了第三页时，筑境/工坊/资源集市/独家特调
-// 这四个图标在外观里根本没有格子，换不了皮肤。
-const BUILTIN_ICON_SKIN_IDS: IconId[] = [...PAGE_1_DEFAULT, ...PAGE_2_DEFAULT, ...PAGE_3_DEFAULT, ...DOCK_DEFAULT];
+// 换肤入口覆盖四页默认图标和DOCK；用户移动图标不会改变这份应用列表。
+const BUILTIN_ICON_SKIN_IDS: IconId[] = [...new Set([...PAGE_1_DEFAULT, ...PAGE_2_DEFAULT, ...PAGE_3_DEFAULT, ...PAGE_4_DEFAULT, ...DOCK_DEFAULT])];
 
 type IconSkinItem = {
   id: DesktopIconId;

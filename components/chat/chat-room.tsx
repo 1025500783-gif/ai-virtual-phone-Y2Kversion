@@ -1,4 +1,6 @@
 "use client";
+import "@/styles/imessage-composer-polish.css";
+import { registerFloatingPageContext } from "@/lib/floating-tools-context";
 
 import { forwardRef, Fragment, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChatSession, ChatMessage, CHAT_APP_SETTINGS_UPDATED_EVENT, CHAT_INITIAL_VISIBLE_MESSAGE_COUNT, CHAT_LOAD_MORE_MESSAGE_COUNT, CHAT_REQUEST_REPLY_EVENT, loadChatAppSettings, loadChatMessages, loadChatContacts, loadChatSessions, saveChatSessions, pushChatMessage, updateChatMessage, deleteChatMessage, deleteChatMessagesFrom, deleteChatMessagesByIds, retractChatMessage, editChatMessage, updateMessageMediaData, replaceResponseBatchWithParts, replaceGroupResponseRound, isReadingDiscussMessage, isSystemInstructionMessage, createResponseBatchId, createResponseRoundId, getLatestStateValues, getLatestCharacterStateValues, compareChatMessages, isSessionStreamingEnabled } from "@/lib/chat-storage";
@@ -66,8 +68,8 @@ import { GiftPickerModal } from "./gift-picker-modal";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { RetryGuidanceDialog } from "./retry-guidance-dialog";
 import { withRetryGuidance } from "@/lib/chat-retry-guidance";
+import { beginRetryVersion, finishRetryVersion, findRetrySeries, recoverPendingRetryVersions, retryMessageStart, retrySourceText, selectRetryVersion, type RetrySeries } from "@/lib/chat-retry-versions";
 import { queueGroupDirectorNote, getGroupDirectorNote, consumeGroupDirectorNote } from "@/lib/group-director-note";
-
 import { deleteWeixinCloudMessagesFromCloud, emitWeixinSyncToast, syncAllWeixinBotRuntimesToCloud } from "@/lib/weixin-cloud-sync";
 import { loadBindingConfig, loadImageGenerationSettings, loadPresets, loadRegexes, resolveBinding, resolveUserIdentity } from "@/lib/settings-storage";
 import { generateGroupChatCompletion, generateGroupOfflineChatCompletion, parseGroupChatResponse, buildEditableGroupRoundText } from "@/lib/group-chat-engine";
@@ -375,6 +377,7 @@ type ManagedGenerationOptions = {
     history: ChatMessage[];
     errorPrefix?: string;
     onDecline?: () => void | Promise<void>;
+    retryVersionRun?: boolean;
 };
 
 const activeGenerationRuns = new Map<string, ActiveGenerationRun>();
@@ -872,6 +875,10 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
     return (
         <div
             className="chat-input-bar chat-room-main-pane flex flex-col"
+            onFocusCapture={() => setInputFocused(true)}
+            onBlurCapture={e => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setInputFocused(false);
+            }}
             data-ui="input"
             data-imessage-private=""
             {...(inputText.trim() ? { "data-has-text": "" } : {})}
@@ -967,11 +974,13 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     {!isGenerating && (
                         <button
                             type="button"
-                            onClick={() => { if (!inputLocked && !isGenerating) sendDraft(false); }}
-                            disabled={inputLocked || isGenerating || !inputText.trim()}
+                            onPointerDown={e => e.preventDefault()}
+                            onClick={() => sendDraft(false)}
+                            disabled={inputLocked || !inputText.trim()}
                             className="imessage-composer-shortcut imessage-composer-ai-reply"
-                            aria-label="仅发送消息"
-                            title="仅发送消息，不触发回复"
+                            style={{ opacity: 0, color: "transparent" }}
+                            aria-label="仅发送"
+                            title="仅发送，不触发 AI 回复"
                         >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0Z" /></svg>
                         </button>
@@ -1000,7 +1009,6 @@ const ChatTextInputBar = memo(forwardRef<ChatTextInputHandle, {
                     setSuggestClosed(false);
                 }}
                 onBlur={() => {
-                    setInputFocused(false);
                     setSuggestClosed(true);
                     mentions.close();
                 }}
@@ -1313,6 +1321,10 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
     }, [session, session.id, sessionAvatarRevision, storedCharacter]);
     const [isGenerating, setIsGenerating] = useState(false);
     const [offlineMode, setOfflineMode] = useState(false);
+    useEffect(() => {
+        if (!offlineMode) return;
+        return registerFloatingPageContext({ ownerApp: "chat", appId: session.isGroup ? "group_chat" : "chat", sessionId: session.id, characterId: session.isGroup ? undefined : session.contactId, label: "当前聊天 · 线下模式" });
+    }, [offlineMode, session.id, session.isGroup, session.contactId]);
     const [theaterMode, setTheaterMode] = useState(() => kvGet(CHAT_THEATER_MODE_PREFIX + session.id) === "1");
     const [offlineTurns, setOfflineTurns] = useState<ChatOfflineTurn[]>([]);
     const [offlineVisibleCount, setOfflineVisibleCount] = useState(OFFLINE_INITIAL_LOAD);
@@ -1353,6 +1365,11 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
     const [callInitiator, setCallInitiator] = useState<"user" | "character">("user");
     const [callInitiatorName, setCallInitiatorName] = useState<string>("");
     const [userIdentity, setUserIdentity] = useState<UserIdentity | null>(null);
+    useEffect(() => {
+        const refresh = () => setUserIdentity(resolveUserIdentity(session.contactId, "chat"));
+        window.addEventListener("settings-updated", refresh);
+        return () => window.removeEventListener("settings-updated", refresh);
+    }, [session.contactId]);
     const [enterToSendEnabled, setEnterToSendEnabled] = useState(() => loadChatAppSettings().enterToSendEnabled === true);
 
     // Rich media input modals
@@ -1533,7 +1550,9 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
     const tapbackPressRef = useRef<{ id: string; pointerId: number; startedAt: number } | null>(null);
     const suppressTapbackClickRef = useRef<string | null>(null);
     const [contextMenuAnchor, setContextMenuAnchor] = useState<ContextMenuAnchor | null>(null);
-    const [retryTarget, setRetryTarget] = useState<{ id: string; offline?: boolean } | null>(null);
+    const [retryTarget, setRetryTarget] = useState<{ id: string; offline?: boolean; series?: RetrySeries } | null>(null);
+    const [retryVersionBusy, setRetryVersionBusy] = useState(false);
+    const retryVersionRunRef = useRef(false);
     const [contextFocusShift, setContextFocusShift] = useState(0);
     const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
     const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
@@ -1660,6 +1679,19 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
     const syncMessagesFromStorage = useCallback(() => {
         applyStoredMessageWindow(loadChatMessages(session.id));
     }, [applyStoredMessageWindow, session.id]);
+
+    useEffect(() => {
+        let active = true;
+        if (activeGenerationRuns.has(session.id) || activeOfflineGenerationRuns.has(session.id)) return;
+        retryVersionRunRef.current = true;
+        void recoverPendingRetryVersions(session.id).then(changed => {
+            if (!active || !changed) return;
+            syncMessagesFromStorage();
+            setOfflineTurns(loadChatOfflineTurns(session.id));
+        }).catch(error => { if (active) showChatToast(`恢复重试版本失败：${error instanceof Error ? error.message : String(error)}`); })
+            .finally(() => { if (active) retryVersionRunRef.current = false; });
+        return () => { active = false; retryVersionRunRef.current = false; };
+    }, [session.id, syncMessagesFromStorage]);
 
     useEffect(() => {
         const syncAppliedTapback = (event: Event) => {
@@ -3799,7 +3831,9 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
         history,
         errorPrefix = "发送失败",
         onDecline,
+        retryVersionRun = false,
     }: ManagedGenerationOptions) => {
+        if (retryVersionRunRef.current && !retryVersionRun) return;
         if (isGeneratingRef.current) {
             if (activeGenerationRuns.has(session.id)) return;
             // 上一轮被外部取消/顶替后收尾提前返回过，标记已是陈旧状态：复位后继续本次请求
@@ -4033,7 +4067,7 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
 
     const sendRichMessage = (mediaType: ChatMessage["mediaType"], mediaData: ChatMessage["mediaData"], content: string = "", mediaUrl?: string): boolean => {
         if (!ensureGroupSpeakPermission()) return false;
-        if (isGenerating) {
+        if (isGenerating || retryVersionRunRef.current) {
             showChatToast("请先等待对方回复");
             return false;
         }
@@ -4644,7 +4678,7 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
 
     const handleSendText = (text: string, options?: { autoReply?: boolean; screenEffect?: "echo" | "love" | "fireworks"; mentions?: { characterId: string; name: string }[] }): boolean => {
         if (!ensureGroupSpeakPermission()) return false;
-        if (isGenerating) {
+        if (isGenerating || retryVersionRunRef.current) {
             showChatToast("请先等待对方回复");
             return false;
         }
@@ -5026,8 +5060,28 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
         setActiveOfflineTarget(null);
     };
 
-    const handleOfflineRetryFrom = async (turnId: string, guidance = "") => {
-        if (isOfflineGenerating) {
+    const openRetryVersions = (id: string, offline = false) => {
+        if (isGeneratingRef.current || isOfflineGenerating || retryVersionBusy || retryVersionRunRef.current) { showChatToast("请先等待当前回复结束"); return; }
+        try {
+            cancelFollowUp(session.id);
+            setRetryTarget({ id, offline, series: findRetrySeries(session.id, id, offline) });
+        } catch (error) { showChatToast(error instanceof Error ? error.message : String(error)); }
+    };
+    const switchRetryVersion = async (index: number) => {
+        if (!retryTarget?.series || retryVersionBusy || isGeneratingRef.current || isOfflineGenerating || retryVersionRunRef.current) return;
+        retryVersionRunRef.current = true;
+        setRetryVersionBusy(true);
+        try {
+            const series = await selectRetryVersion(retryTarget.series, index);
+            const id = series.versions[index].memberIds[0];
+            if (retryTarget.offline) setOfflineTurns(loadChatOfflineTurns(session.id)); else syncMessagesFromStorage();
+            setRetryTarget({ ...retryTarget, id, series });
+        } catch (error) { showChatToast(error instanceof Error ? error.message : String(error)); }
+        finally { retryVersionRunRef.current = false; setRetryVersionBusy(false); }
+    };
+
+    const handleOfflineRetryFrom = async (turnId: string, guidance = "", existing?: RetrySeries) => {
+        if (isOfflineGenerating || retryVersionRunRef.current) {
             showChatToast("线下回复生成中");
             return;
         }
@@ -5040,6 +5094,13 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
             showChatToast("这一轮没有可重试的用户输入");
             return;
         }
+
+        let retrySeries: RetrySeries;
+        retryVersionRunRef.current = true;
+        try { retrySeries = await beginRetryVersion(session.id, turnId, "offline", existing); }
+        catch (error) { retryVersionRunRef.current = false; showChatToast(`无法保存重试版本：${error instanceof Error ? error.message : String(error)}`); return; }
+        if (isOfflineGenerating || JSON.stringify(loadChatOfflineTurns(session.id)) !== JSON.stringify(offlineTurns)) { retryVersionRunRef.current = false; showChatToast("聊天记录刚刚发生变化，请重新打开重试窗口"); return; }
+        const beforeIds = loadChatOfflineTurns(session.id).map(turn => turn.id);
 
         cancelFollowUp(session.id);
         setActiveOfflineTarget(null);
@@ -5059,7 +5120,7 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
         const isCurrentOfflineRun = () => isOfflineGenerationRunActive(session.id, offlineRunId);
 
         try {
-            const history = withRetryGuidance(buildOfflinePromptHistory(baseTurns, retryInput), session.id, guidance);
+            const history = withRetryGuidance(buildOfflinePromptHistory(baseTurns, retryInput), session.id, guidance, retrySourceText(retrySeries, turnId));
             const onOfflineDelta = (delta: string) => {
                 if (!isCurrentOfflineRun()) return;
                 offlineStreamAccumRef.current += delta;
@@ -5103,10 +5164,12 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
             setOfflineTurns([...baseTurns, saved]);
         } catch (error: any) {
             if (!isCurrentOfflineRun() || isAbortLikeError(error)) return;
-            offlineTextInputRef.current?.setText(retryInput);
             showChatToast(`线下重试失败: ${error?.message || String(error)}`, 3000);
         } finally {
-            if (!finishOfflineGenerationRun(session.id, offlineRunId)) return;
+            if (!finishOfflineGenerationRun(session.id, offlineRunId) && activeOfflineGenerationRuns.has(session.id)) { retryVersionRunRef.current = false; return; }
+            try { await finishRetryVersion(retrySeries, beforeIds); setOfflineTurns(loadChatOfflineTurns(session.id)); }
+            catch (error) { showChatToast(`重试版本保存失败：${error instanceof Error ? error.message : String(error)}`); }
+            retryVersionRunRef.current = false;
             setPendingOfflineUserText("");
             offlineGenerationInputRef.current = "";
             setIsOfflineGenerating(false);
@@ -5115,26 +5178,45 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
         }
     };
 
-    const handleRetry = async (msgId: string, guidance = "") => {
-        if (isGeneratingRef.current) { showChatToast("请先等待当前回复结束"); return; }
-        const msgIndex = messages.findIndex(m => m.id === msgId);
-        if (msgIndex === -1 || messages[msgIndex].role !== "assistant") return;
+    const handleRetry = async (msgId: string, guidance = "", existing?: RetrySeries) => {
+        if (isGeneratingRef.current || retryVersionRunRef.current) { showChatToast("请先等待当前回复结束"); return; }
+        const stored = loadChatMessages(session.id);
+        const targetIndex = stored.findIndex(m => m.id === msgId);
+        if (targetIndex === -1 || !["assistant", "system"].includes(stored[targetIndex].role)) return;
 
-        const contextMessages = messages.slice(0, msgIndex);
+        const isSystemNotice = existing ? existing.kind === "notice" : uiRole(stored[targetIndex]) === "system";
+        const msgIndex = isSystemNotice ? targetIndex : retryMessageStart(stored, msgId, existing);
+        let retrySeries: RetrySeries;
+        retryVersionRunRef.current = true;
+        try { retrySeries = await beginRetryVersion(session.id, msgId, isSystemNotice ? "notice" : "tail", existing); }
+        catch (error) { retryVersionRunRef.current = false; showChatToast(`无法保存重试版本：${error instanceof Error ? error.message : String(error)}`); return; }
+        if (isGeneratingRef.current || JSON.stringify(loadChatMessages(session.id)) !== JSON.stringify(stored)) { retryVersionRunRef.current = false; showChatToast("聊天记录刚刚发生变化，请重新打开重试窗口"); return; }
+        const noticeIds = new Set(retrySeries.versions[retrySeries.active].memberIds);
+        const contextMessages = isSystemNotice ? stored.filter(m => !noticeIds.has(m.id)) : stored.slice(0, msgIndex);
 
-        // Delete this message and everything after it
-        deleteChatMessagesFrom(msgId);
-        setMessages(prev => prev.slice(0, msgIndex));
+        // Retrying a notice must preserve subsequent user messages and replies.
+        if (isSystemNotice) {
+            deleteChatMessagesByIds(session.id, [...noticeIds]);
+            syncMessagesFromStorage();
+        } else {
+            deleteChatMessagesFrom(stored[msgIndex].id);
+            syncMessagesFromStorage();
+        }
         setActiveMessageId(null);
 
         // Cancel any pending follow-up for this session
         cancelFollowUp(session.id);
 
+        try {
         await runManagedGeneration({
-            history: withRetryGuidance(contextMessages, session.id, guidance),
+            history: withRetryGuidance(contextMessages, session.id, guidance, retrySourceText(retrySeries, msgId)),
             errorPrefix: "重试失败",
-            onDecline: triggerReply,
+            onDecline: () => runManagedGeneration({ history: loadChatMessages(session.id), retryVersionRun: true }),
+            retryVersionRun: true,
         });
+        await finishRetryVersion(retrySeries, stored.map(message => message.id)); syncMessagesFromStorage(); }
+        catch (error) { showChatToast(`重试版本保存失败：${error instanceof Error ? error.message : String(error)}`); }
+        finally { retryVersionRunRef.current = false; }
     };
 
     const handleRetractMessage = (msgId: string) => {
@@ -5706,7 +5788,7 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
                 <div className="flex">
                     <button onClick={() => { copyTextToClipboard(getOfflineCopyText(turn, role)); setActiveOfflineTarget(null); }} className="ctx-menu-btn">复制</button>
                     <button onClick={() => handleOfflineEditStart(turn, role)} className="ctx-menu-btn">编辑</button>
-                    <button onClick={() => { closeContextMenu(); setRetryTarget({ id: turn.id, offline: true }); }} className="ctx-menu-btn ctx-menu-btn-danger">重试一下</button>
+                    <button onClick={() => { closeContextMenu(); openRetryVersions(turn.id, true); }} className="ctx-menu-btn ctx-menu-btn-danger">重试一下</button>
                 </div>
                 <div className="flex">
                     <button onClick={() => handleOfflineDeleteTurn(turn.id)} className="ctx-menu-btn ctx-menu-btn-danger">删除</button>
@@ -5903,7 +5985,7 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
                 )}
                 <div className="flex imessage-context-actions" data-menu-danger-group="">
                     {m.role === "assistant" && (
-                        <button onClick={() => { closeContextMenu(); setRetryTarget({ id: storedMessageId }); }} className="ctx-menu-btn ctx-menu-btn-danger"><RotateCcw className="imessage-context-icon" aria-hidden="true" /><span>重试一下</span></button>
+                        <button onClick={() => { closeContextMenu(); openRetryVersions(storedMessageId); }} className="ctx-menu-btn ctx-menu-btn-danger"><RotateCcw className="imessage-context-icon" aria-hidden="true" /><span>重试一下</span></button>
                     )}
                     <button onClick={() => handleDeleteMessage(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger"><Trash2 className="imessage-context-icon" aria-hidden="true" /><span>删除</span></button>
                     <button onClick={() => handleDeleteMessagesFrom(storedMessageId)} className="ctx-menu-btn ctx-menu-btn-danger"><ListX className="imessage-context-icon" aria-hidden="true" /><span>删除以下</span></button>
@@ -6046,6 +6128,13 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
                     }}
                     className="ctx-menu-btn"
                 >多选</button>
+                {msg.role !== "user" && <button
+                    onClick={() => {
+                        closeContextMenu();
+                        openRetryVersions(storedMessageId);
+                    }}
+                    className="ctx-menu-btn"
+                >重试一下</button>}
                 <button
                     onClick={() => {
                         handleDeleteMessage(storedMessageId);
@@ -7925,10 +8014,16 @@ export function ChatRoom({ session, onBack, onDeleted, lyricQuote, onLyricQuoteC
                 </div>
             )}
 
-            {retryTarget && <RetryGuidanceDialog onCancel={() => setRetryTarget(null)} onConfirm={guidance => {
+            {retryTarget && <RetryGuidanceDialog
+                versionIndex={retryTarget.series?.active ?? 0} versionCount={retryTarget.series?.versions.length ?? 1}
+                versionBusy={retryVersionBusy} onSelectVersion={index => void switchRetryVersion(index)}
+                versionText={retrySourceText(retryTarget.series, retryTarget.id) || (retryTarget.offline ? offlineTurns.find(turn => turn.id === retryTarget.id)?.assistantContent : messages.find(message => message.id === retryTarget.id)?.content) || ""}
+                preserveFollowing={retryTarget.series ? retryTarget.series.kind === "notice" : !retryTarget.offline && messages.some(m => m.id === retryTarget.id && uiRole(m) === "system")}
+                onCancel={() => { if (!retryVersionBusy) setRetryTarget(null); }} onConfirm={guidance => {
+                if (retryVersionBusy) return;
                 const target = retryTarget; setRetryTarget(null);
-                if (target.offline) void handleOfflineRetryFrom(target.id, guidance);
-                else void handleRetry(target.id, guidance);
+                if (target.offline) void handleOfflineRetryFrom(target.id, guidance, target.series);
+                else void handleRetry(target.id, guidance, target.series);
             }} />}
             {editingMessageId && (
                 <div className="chat-html-overlay" onClick={() => { setEditingMessageId(null); setEditingContent(""); }}>

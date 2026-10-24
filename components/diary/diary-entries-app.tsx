@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Bot, ChevronLeft, Clock3, NotebookPen, Trash2, WandSparkles, X } from "lucide-react";
 import { DotsThree } from "@phosphor-icons/react";
 
-import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
+import { loadActivityCharacters as loadCharacters } from "@/lib/chat-app-characters";
 import type { Character } from "@/lib/character-types";
 import { generateDiaryEntryForCharacter } from "@/lib/diary-entry-engine";
 import { useDiaryGenerating } from "@/lib/diary-generating-tracker";

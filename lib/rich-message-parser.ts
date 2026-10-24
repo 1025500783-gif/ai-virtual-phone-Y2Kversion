@@ -403,7 +403,7 @@ const RICH_PATTERNS: {
         build: (m) => ({
             content: "",
             mediaType: "audio" as const,
-            mediaData: { label: voiceDisplayText(m[1]), ...(m[1].includes("{voice:") ? { speechText: voiceSpeechText(m[1]) } : {}) },
+            mediaData: { label: voiceDisplayText(m[1]), ...(/\{voice\s*[:：]/i.test(m[1]) ? { speechText: voiceSpeechText(m[1]) } : {}) },
         }),
     },
     {

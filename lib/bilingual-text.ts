@@ -6,7 +6,18 @@ export function normalizeBilingualTextInput(text: string): string {
     return text.replace(/\\r\\n|\\n|\\r/g, "\n");
 }
 
-function splitSegmentedBilingualLine(line: string): { original: string; translated: string } | null {
+function isValidTranslation(original: string, translated: string, allowUnchanged = false): boolean {
+    if (containsChinese(translated)) return true;
+    if (!allowUnchanged) return false;
+    // Voice directions belong to the performance, not the words being paired.
+    const textKey = (value: string) => value
+        .replace(/\{voice\s*[:：][^{}]*\}|\[[a-zA-Z][a-zA-Z ,'-]{0,100}\]/gi, "")
+        .replace(/[^\p{L}\p{N}\p{S}]/gu, "").toLowerCase();
+    const key = textKey(original);
+    return key !== "" && key === textKey(translated);
+}
+
+function splitSegmentedBilingualLine(line: string, allowUnchanged = false): { original: string; translated: string } | null {
     const parts = line.split("|").map(part => part.trim());
     if (parts.length < 2 || parts.some(part => !part)) return null;
 
@@ -34,7 +45,7 @@ function splitSegmentedBilingualLine(line: string): { original: string; translat
     for (let index = 0; index < parts.length; index += 2) {
         const original = parts[index];
         const translated = parts[index + 1];
-        if (!translated || !containsChinese(translated)) return null;
+        if (!translated || !isValidTranslation(original, translated, allowUnchanged)) return null;
         if (!containsChinese(original)) hasNonChineseOriginal = true;
         originalParts.push(original);
         translatedParts.push(translated);
@@ -56,10 +67,7 @@ export function splitBilingualText(text: string, options?: { allowUnchangedTrans
         const original = trimmed.slice(0, firstPipe).trim();
         const translated = trimmed.slice(firstPipe + 1).trim();
         if (!original || !translated) return null;
-        // Only chat text opts in: quoted names/emoji may legitimately stay unchanged.
-        const nameKey = (value: string) => value.replace(/[^\p{L}\p{N}\p{S}]/gu, "").toLowerCase();
-        const unchanged = options?.allowUnchangedTranslation && nameKey(original) !== "" && nameKey(original) === nameKey(translated);
-        if (!containsChinese(translated) && !unchanged) return null;
+        if (!isValidTranslation(original, translated, options?.allowUnchangedTranslation)) return null;
         return { original, translated };
     }
     if (trimmed.includes("\n")) {
@@ -79,7 +87,7 @@ export function splitBilingualText(text: string, options?: { allowUnchangedTrans
             if (linePipe > 0 && linePipe === line.lastIndexOf("|")) {
                 const lineOriginal = line.slice(0, linePipe).trim();
                 const lineTranslated = line.slice(linePipe + 1).trim();
-                if (!lineOriginal || !lineTranslated || !containsChinese(lineTranslated)) return null;
+                if (!lineOriginal || !lineTranslated || !isValidTranslation(lineOriginal, lineTranslated, options?.allowUnchangedTranslation)) return null;
                 originalLines.push(lineOriginal);
                 translatedLines.push(lineTranslated);
                 bilingualLineCount += 1;
@@ -87,7 +95,7 @@ export function splitBilingualText(text: string, options?: { allowUnchangedTrans
             }
 
             if (line.includes("|")) {
-                const segmented = splitSegmentedBilingualLine(line);
+                const segmented = splitSegmentedBilingualLine(line, options?.allowUnchangedTranslation);
                 if (!segmented) return null;
                 originalLines.push(segmented.original);
                 translatedLines.push(segmented.translated);
@@ -102,10 +110,10 @@ export function splitBilingualText(text: string, options?: { allowUnchangedTrans
         if (bilingualLineCount === 0) return null;
         const original = originalLines.join("\n").trim();
         const translated = translatedLines.join("\n").trim();
-        if (!original || !translated || !containsChinese(translated)) return null;
+        if (!original || !translated || !isValidTranslation(original, translated, options?.allowUnchangedTranslation)) return null;
         return { original, translated };
     }
-    const segmented = splitSegmentedBilingualLine(trimmed);
+    const segmented = splitSegmentedBilingualLine(trimmed, options?.allowUnchangedTranslation);
     if (segmented) return segmented;
     return null;
 }

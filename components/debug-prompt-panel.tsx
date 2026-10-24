@@ -94,7 +94,7 @@ function isExtraPromptMode(mode: DebugMode): mode is ExtraPromptAppId {
     return EXTRA_PROMPT_APPS.some(app => app.id === mode);
 }
 
-export function DebugPromptPanel() {
+export function DebugPromptPanel({ managed, onManagedClose }: { managed?: boolean; onManagedClose?: () => void } = {}) {
     const chatState = useSyncExternalStore(subscribeDebugChatState, getDebugChatState, () => null);
     const promptSnapshot = useSyncExternalStore(subscribeDebugPromptSnapshot, getDebugPromptSnapshot, () => null);
     const [collapsed, setCollapsed] = useState(true);
@@ -748,9 +748,9 @@ export function DebugPromptPanel() {
         setAdventureWorldId(adventureWorldOptions[0].id);
     }, [adventureWorldId, adventureWorldOptions]);
 
-    if (!enabled) return null;
+    if (!enabled && !managed) return null;
 
-    if (collapsed) {
+    if (collapsed && !managed) {
         return (
             <button
                 type="button"
@@ -917,7 +917,7 @@ export function DebugPromptPanel() {
                 <span className="pv-header-title">提示词查看器</span>
                 {resultMeta && <span className="pv-header-meta">{resultMeta.characterName}</span>}
                 <span style={{ flex: 1 }} />
-                <button type="button" className="pv-close-btn" aria-label="关闭" onClick={(e) => { e.stopPropagation(); setCollapsed(true); }}>
+                <button type="button" className="pv-close-btn" aria-label="关闭" onClick={(e) => { e.stopPropagation(); if (managed) onManagedClose?.(); else setCollapsed(true); }}>
                     <X size={18} strokeWidth={2} />
                 </button>
             </div>

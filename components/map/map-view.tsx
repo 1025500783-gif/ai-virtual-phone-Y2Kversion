@@ -10,7 +10,7 @@ import {
   loadAdventureInteractionConfig,
 } from "@/lib/map-storage";
 import { ADVENTURE_THEMES } from "./map-text-stream";
-import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
+import { loadActivityCharacters as loadCharacters } from "@/lib/chat-app-characters";
 import { loadApiConfigs, loadBindingConfig, resolveBinding, resolveUserIdentity, resolveAuxiliaryApiConfig } from "@/lib/settings-storage";
 import { expandEvent, companionDeclare, resolveRound, rollD100, ROLL_LABELS, formatGameTime, pickEncounter, shouldTriggerEncounter, setDMDebugCallback, shouldAutoSummarize, generateAdventureSummary, generateEnding, type EndingResult, DEFAULT_DM_ENDING_PROMPT } from "@/lib/map-rpg-engine";
 import { STAT_LABELS, ALL_STATS } from "@/lib/map-types";

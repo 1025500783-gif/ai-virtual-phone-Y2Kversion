@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Bot, ChevronLeft, Clock3, Flame, MessageCircle, PenLine, RotateCw, Trash2, UserRound, WandSparkles, X } from "lucide-react";
 import { CardsThree, DotsThree } from "@phosphor-icons/react";
 
-import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
+import { loadActivityCharacters as loadCharacters } from "@/lib/chat-app-characters";
 import type { Character } from "@/lib/character-types";
 import { useAccount } from "@/lib/account-context";
 import {

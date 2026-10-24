@@ -1,0 +1,11 @@
+/* Classic/glass composer detail polish; keep SP and input behavior unchanged. */
+.chat-room-wrapper[data-imessage-private]:is([data-beauty-preset="classic"],[data-beauty-preset="glass"]) .chat-plus-toggle svg line {
+  stroke-width:1.15;
+}
+.chat-room-wrapper[data-imessage-private]:is([data-beauty-preset="classic"],[data-beauty-preset="glass"]) .imessage-composer-subject-label,
+.chat-room-wrapper[data-imessage-private]:is([data-beauty-preset="classic"],[data-beauty-preset="glass"]) .chat-input-textarea::placeholder {
+  color:color-mix(in srgb,var(--im26-composer-hint,#707075) 64%,transparent);
+}
+.chat-room-wrapper[data-imessage-private]:is([data-beauty-preset="classic"],[data-beauty-preset="glass"]) .chat-voice-message-btn svg {
+  width:25px; height:25px;
+}

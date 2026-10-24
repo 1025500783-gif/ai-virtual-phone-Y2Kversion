@@ -401,6 +401,7 @@ export function ChatSettingsPanel({
     };
     const [visionImagePromptLimit, setVisionImagePromptLimit] = useState(() => normalizeVisionImagePromptLimit(session.visionImagePromptLimit));
     const [bilingualTranslationEnabled, setBilingualTranslationEnabled] = useState(session.bilingualTranslationEnabled !== false);
+    const [quoteTranslationEnabled, setQuoteTranslationEnabled] = useState(session.quoteTranslationEnabled !== false);
     const [collapseBilingualTranslation, setCollapseBilingualTranslation] = useState(session.collapseBilingualTranslation !== false);
     const [beautyPreset, setBeautyPreset] = useState(() => resolveChatBeautyPreset(session));
     const [discardInvalidStickers, setDiscardInvalidStickers] = useState(session.discardInvalidStickers === true);
@@ -939,6 +940,23 @@ export function ChatSettingsPanel({
                                     onChange={c => {
                                         setBilingualTranslationEnabled(c);
                                         updateSession({ bilingualTranslationEnabled: c });
+                                    }}
+                                />
+                            </div>
+                        </div>
+                        <div className="menu-item">
+                            <ChatInfoIcon icon={MessageSquare} color={BINDING_ACCENTS.memory} />
+                            <div className="menu-label-group">
+                                <span className="menu-label">引文翻译</span>
+                                <span className="menu-desc">角色复述你的话时，自然转为当前使用的语言</span>
+                            </div>
+                            <div className="menu-right">
+                                <Toggle
+                                    ariaLabel="引文翻译"
+                                    checked={quoteTranslationEnabled}
+                                    onChange={checked => {
+                                        setQuoteTranslationEnabled(checked);
+                                        updateSession({ quoteTranslationEnabled: checked });
                                     }}
                                 />
                             </div>

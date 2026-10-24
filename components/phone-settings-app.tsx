@@ -29,6 +29,8 @@ import { Toggle } from "./ui/form";
 import { loadChatAppSettings, saveChatAppSettings } from "@/lib/chat-storage";
 import { loadKeepAlive, saveKeepAlive } from "@/lib/weixin-storage";
 import { BINDING_ACCENTS, CONTENT_APP_ACCENTS } from "@/lib/ui-accent-colors";
+import { changeFloatingTool } from "@/lib/floating-tools";
+import { CHAT_APP_SETTINGS_UPDATED_EVENT } from "@/lib/chat-storage";
 
 export const SettingsContext = createContext<{
     setSubpageTitle: (title: string | null) => void;
@@ -112,6 +114,7 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
     const [timeAware, setTimeAware] = useState(true);
     const [promptViewerEnabled, setPromptViewerEnabled] = useState(false);
     const [quickActionEnabled, setQuickActionEnabled] = useState(false);
+    const [floatingToolsEnabled, setFloatingToolsEnabled] = useState(false);
     const [keepAlive, setKeepAlive] = useState(false);
     // 角色电脑：施工中弹窗（返回 / 仍要看看）
     const pageBodyRef = useRef<HTMLDivElement | null>(null);
@@ -227,14 +230,19 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
 
     const handlePromptViewerChange = useCallback((next: boolean) => {
         setPromptViewerEnabled(next);
-        saveChatAppSettings({ ...loadChatAppSettings(), promptViewerEnabled: next });
+        saveChatAppSettings(changeFloatingTool(loadChatAppSettings(), "promptViewerEnabled", next));
         onNotice(next ? "已开启提示词查看器" : "已关闭提示词查看器");
     }, [onNotice]);
 
     const handleQuickActionChange = useCallback((next: boolean) => {
         setQuickActionEnabled(next);
-        saveChatAppSettings({ ...loadChatAppSettings(), quickActionEnabled: next });
+        saveChatAppSettings(changeFloatingTool(loadChatAppSettings(), "quickActionEnabled", next));
         onNotice(next ? "已开启快捷操作" : "已关闭快捷操作");
+    }, [onNotice]);
+
+    const handleFloatingToolsChange = useCallback((next: boolean) => {
+        saveChatAppSettings(changeFloatingTool(loadChatAppSettings(), "floatingToolsEnabled", next));
+        onNotice(next ? "已开启悬浮工具" : "已关闭悬浮工具");
     }, [onNotice]);
 
     const handleKeepAliveChange = useCallback((next: boolean) => {
@@ -341,11 +349,18 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
     }, []);
 
     useEffect(() => {
+        const syncTools = () => {
+            const current = loadChatAppSettings();
+            setPromptViewerEnabled(current.promptViewerEnabled === true);
+            setQuickActionEnabled(current.quickActionEnabled === true);
+            setFloatingToolsEnabled(current.floatingToolsEnabled === true);
+        };
         const settings = loadChatAppSettings();
         setTimeAware(settings.timeAware !== false);
-        setPromptViewerEnabled(settings.promptViewerEnabled === true);
-        setQuickActionEnabled(settings.quickActionEnabled === true);
+        syncTools();
         setKeepAlive(loadKeepAlive());
+        window.addEventListener(CHAT_APP_SETTINGS_UPDATED_EVENT, syncTools);
+        return () => window.removeEventListener(CHAT_APP_SETTINGS_UPDATED_EVENT, syncTools);
     }, []);
 
     // Listen for mascot navigation mode (e.g. jump to worldbook/regex tab)
@@ -469,7 +484,7 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
                                         <span className="menu-desc settings-tools-menu-desc">开启后显示悬浮按钮，可查看当前提示词</span>
                                     </span>
                                     <span className="menu-right settings-tools-menu-toggle">
-                                        <Toggle checked={promptViewerEnabled} onChange={handlePromptViewerChange} className="settings-toggle-control" />
+                                        <Toggle checked={promptViewerEnabled} ariaLabel="提示词查看器" onChange={handlePromptViewerChange} className="settings-toggle-control" />
                                     </span>
                                 </div>
                                 <div className="menu-item settings-tools-menu-item">
@@ -481,7 +496,21 @@ export function PhoneSettingsApp({ onClose, onNotice }: SettingsPageProps) {
                                         <span className="menu-desc settings-tools-menu-desc">快速切换 API 与世界书</span>
                                     </span>
                                     <span className="menu-right settings-tools-menu-toggle">
-                                        <Toggle checked={quickActionEnabled} onChange={handleQuickActionChange} className="settings-toggle-control" />
+                                        <Toggle checked={quickActionEnabled} ariaLabel="快捷操作" onChange={handleQuickActionChange} className="settings-toggle-control" />
+                                    </span>
+                                </div>
+                                <div className="menu-item settings-tools-menu-item">
+                                    <span className="card-icon card-icon-glass" style={quickActionIconStyle}>
+                                        <span aria-hidden="true" style={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 10, background: "linear-gradient(145deg, #a6adba, #555f71)", boxShadow: "inset 0 1px 0 #ffffff80" }}>
+                                            <span style={{ width: 19, height: 19, borderRadius: "50%", border: "3px solid #ffffff55", background: "#ffffffe0", backgroundClip: "padding-box" }} />
+                                        </span>
+                                    </span>
+                                    <span className="settings-tools-menu-copy">
+                                        <span className="menu-label appearance-menu-item-label">悬浮工具</span>
+                                        <span className="menu-desc settings-tools-menu-desc">合并提示词与快捷操作，可拖动贴边</span>
+                                    </span>
+                                    <span className="menu-right settings-tools-menu-toggle">
+                                        <Toggle checked={floatingToolsEnabled} ariaLabel="悬浮工具" onChange={handleFloatingToolsChange} className="settings-toggle-control" />
                                     </span>
                                 </div>
                             </div>

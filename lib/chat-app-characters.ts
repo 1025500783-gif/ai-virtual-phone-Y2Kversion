@@ -1,7 +1,9 @@
 import { loadInteractableCharacters } from "./character-storage";
 import { withChatCharacterAvatar } from "./chat-session-avatar";
 
-/** Chat app presentation only; character profiles and other apps keep their own avatars. */
-export function loadChatAppCharacters() {
+/** Activity presentation only; stored character profiles remain unchanged. */
+export function loadActivityCharacters() {
     return loadInteractableCharacters().map(character => withChatCharacterAvatar(null, character));
 }
+
+export const loadChatAppCharacters = loadActivityCharacters;

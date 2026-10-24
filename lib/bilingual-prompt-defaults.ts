@@ -20,6 +20,7 @@ export const CHAT_TEXT_PAIRING_INSTRUCTION = [
   "- 普通聊天不要人为给原文或译文折行，屏幕会自动排版；真要分行的诗歌、歌词用 Markdown 两个空格加换行或 <br>，列表和代码保持本来结构。",
   "- 中文译文必须传达整条意思，保留语气、反话及上下文，不照抄英文、不漏短句、不逐词僵硬直译。例如在讨论备注时 bossy 应按语境译为“霸道/爱管人”，also 要译出“还有/另外”，不能写 Bossy|Bossy 或只输出 also。",
   "- 真正的人名、品牌、emoji可以在中文句子里保留，不要因为含专名就跳过整句翻译；普通形容词和称呼不是免译专名。",
+  "- 整条只有无需翻译的真实专名或emoji时，译文直接保留原文，如 Lars|Lars；不输出缺译、暂无译文等占位说明。",
 ].join("\n");
 
 export const DEFAULT_CHAT_BILINGUAL_PROMPT = [

@@ -23,6 +23,8 @@ import { createDefaultScheduleDraft, generateWeeklyCalendarSchedule } from "@/li
 import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
 import { loadChatSessions } from "@/lib/chat-storage";
 import { resolveUserIdentity } from "@/lib/settings-storage";
+import { getChatCharacterAvatar } from "@/lib/chat-session-avatar";
+import { useActivityAvatarUpdates } from "./use-activity-avatar-updates";
 import {
   formatIsoDate,
   getWeekStartIso,
@@ -81,7 +83,7 @@ function buildOwnerOptions(): OwnerOption[] {
       ownerType: "character",
       ownerId: char.id,
       name: char.name,
-      avatar: char.avatar,
+      avatar: getChatCharacterAvatar(null, char),
     });
   }
   return options;
@@ -113,7 +115,7 @@ function buildPeriodCareCharacterOptions(): PeriodCareCharacterOption[] {
       return {
         characterId: character.id,
         name: session.alias || character.name,
-        avatar: character.avatar,
+        avatar: getChatCharacterAvatar(session, character),
       };
     });
 }
@@ -132,6 +134,7 @@ export function PhoneCalendarApp({
   onNotice?: (text: string) => void;
 }) {
   const todayIso = formatIsoDate(new Date());
+  const avatarRevision = useActivityAvatarUpdates();
   const [owners, setOwners] = useState<OwnerOption[]>(() => buildOwnerOptions());
   const [selectedKey, setSelectedKey] = useState<string>(() => owners[0]?.key ?? "user:me");
   const [view, setView] = useState<"month" | "detail">("month");
@@ -229,12 +232,12 @@ export function PhoneCalendarApp({
   );
   const periodCareCharacterOptions = useMemo(
     () => (showMenstrualSettings ? buildPeriodCareCharacterOptions() : []),
-    [showMenstrualSettings],
+    [showMenstrualSettings, avatarRevision],
   );
 
   useEffect(() => {
     setOwners(buildOwnerOptions());
-  }, []);
+  }, [avatarRevision]);
 
   const refreshPlans = () => {
     if (!selectedOwner) return;

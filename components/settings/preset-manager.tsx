@@ -1,7 +1,9 @@
 "use client";
+import { orderedPresetPrompts, presetDisplayGroupKey, createPresetEditorId } from "@/lib/preset-order";
+import { normalizeScopeAlternatives } from "@/lib/preset-scope";
 
 import { useState, useEffect, useRef, useContext, useCallback, useMemo } from "react";
-import { Plus, Upload, Download, Trash2, RotateCcw, ChevronLeft, ChevronDown, GripVertical, MessageSquare, AlertCircle, Maximize2, Copy, Replace } from "lucide-react";
+import { Plus, Upload, Download, Trash2, RotateCcw, ChevronLeft, ChevronDown, MessageSquare, AlertCircle, Maximize2, Copy, Replace } from "lucide-react";
 import {
     loadPresets,
     savePresets,
@@ -12,51 +14,23 @@ import {
 } from "@/lib/settings-storage";
 import type { PresetConfig, Prompt, PromptOrderEntry } from "@/lib/settings-types";
 import {
-    areTagsEqual,
     CONTENT_SCOPE_TAG_GROUPS,
-    getPromptTags as getScopedPromptTags,
-    getTagsLabel,
-    resolveContentTagLabel,
 } from "@/lib/content-tag-utils";
-import { buildCustomAppTagGroups, findTagGroupForTags, flattenTagGroups } from "@/lib/custom-app-tag-profiles";
+import { buildCustomAppTagGroups, flattenTagGroups } from "@/lib/custom-app-tag-profiles";
 import { CUSTOM_APPS_UPDATED_EVENT, loadInstalledCustomApps } from "@/lib/custom-app-storage";
 import type { InstalledCustomApp } from "@/lib/custom-app-types";
 import { SettingsContext } from "../phone-settings-app";
 import { BottomSheet, ConfirmDialog, TextExpandModal } from "@/components/ui/modal";
 import { SwipeActionRow, useSwipeActions } from "@/components/ui/swipe-actions";
 import { notifyMascotPageContext } from "@/lib/mascot-events";
-import { useTouchSort } from "@/lib/use-touch-sort";
-
-// ── Tag helpers for backward compat (tags[] > featureTag + followUpOnly) ──
-function getPromptTags(p: Prompt): string[] {
-    return getScopedPromptTags(p);
-}
-
-function getPromptTagGroup(p: Prompt, tagGroups = CONTENT_SCOPE_TAG_GROUPS) {
-    const tags = getPromptTags(p);
-    return findTagGroupForTags(tagGroups, tags) ?? tagGroups[0];
-}
-
-function getPromptTagMinor(p: Prompt, group = getPromptTagGroup(p)) {
-    const tags = getPromptTags(p);
-    return group.minors.find(minor => areTagsEqual(minor.tags, tags)) ?? group.minors[0];
-}
+import styles from "./preset-controls.module.css";
+import { PresetScopePicker } from "./preset-scope-picker";
+import { PresetEntryGroups } from "./preset-entry-groups";
+import { PresetGenerationControls } from "./preset-generation-controls";
+import { promptScopeLabel, getPromptScopes } from "@/lib/preset-scope";
 
 function getPromptTagsLabel(p: Prompt, tagProfiles = flattenTagGroups(CONTENT_SCOPE_TAG_GROUPS)): string {
-    return getTagsLabel(getPromptTags(p), tagProfiles);
-}
-
-function getPromptTagsInlineLabel(p: Prompt): string {
-    const tags = getPromptTags(p);
-    return tags.length > 0 ? tags.map(resolveContentTagLabel).join(" · ") : "通用";
-}
-
-function setPromptTags(tags: string[]): Partial<Prompt> {
-    return {
-        tags: tags.length > 0 ? tags : undefined,
-        featureTag: undefined,
-        followUpOnly: undefined,
-    };
+    return promptScopeLabel(p, tagProfiles);
 }
 
 // ── Marker 名称自动识别（手动编辑与桌宠填表共用） ──
@@ -93,7 +67,7 @@ const MASCOT_PRESET_STORAGE_TOOL_NAMES = new Set([
     "更新预设信息",
 ]);
 
-const AutoResizeTextarea = ({ value, onChange, placeholder, style, rows = 1, className }: { value: string, onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void, placeholder?: string, style?: React.CSSProperties, rows?: number, className?: string }) => {
+const AutoResizeTextarea = ({ value, onChange, placeholder, style, rows = 1, className, ariaLabel }: { ariaLabel?: string; value: string, onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void, placeholder?: string, style?: React.CSSProperties, rows?: number, className?: string }) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => {
@@ -105,6 +79,7 @@ const AutoResizeTextarea = ({ value, onChange, placeholder, style, rows = 1, cla
 
     return (
         <textarea
+            aria-label={ariaLabel}
             ref={textareaRef}
             value={value}
             onChange={onChange}
@@ -121,6 +96,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
     const [editingId, setEditingId] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<"list" | "detail">("list");
     const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
+    const [scopeMenu, setScopeMenu] = useState<{ promptId: string; menu: string } | null>(null);
     const [confirmExportId, setConfirmExportId] = useState<string | null>(null);
     const [confirmResetId, setConfirmResetId] = useState<string | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -451,72 +427,32 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
         updatePreset(preset.id, { ...updates, prompts: newPrompts });
     };
 
-    // ── Prompt reorder (shared by HTML5 drag & touch sort) ──
-    const handlePromptReorder = useCallback((fromIndex: number, toIndex: number) => {
-        if (!editingId) return;
-        const preset = presets.find(p => p.id === editingId);
-        if (!preset) return;
-        // Build full display list (same logic as render: ordered + orphans)
-        const ordered = preset.prompt_order && preset.prompt_order.length > 0
-            ? preset.prompt_order.map(e => preset.prompts.find(p => p.identifier === e.identifier)).filter((p): p is Prompt => !!p)
-            : [...preset.prompts];
-        const orderedIds = new Set(ordered.map(p => p.identifier));
-        const orphans = preset.prompts.filter(p => !orderedIds.has(p.identifier));
-        const displayed = [...ordered, ...orphans];
-        // Reorder
-        const [item] = displayed.splice(fromIndex, 1);
-        displayed.splice(toIndex, 0, item);
-        const newOrder = displayed.map(p => ({
-            identifier: p.identifier,
-            enabled: preset.prompt_order
-                ? (preset.prompt_order.find(o => o.identifier === p.identifier)?.enabled ?? p.enabled)
-                : p.enabled,
-        }));
-        updatePreset(preset.id, { prompts: displayed, prompt_order: newOrder });
-    }, [editingId, presets]);
+    const promptListRef = useRef<HTMLDivElement>(null);
 
-    const { containerRef: promptListRef, onTouchStart: onPromptTouchStart, onTouchMove: onPromptTouchMove, onTouchEnd: onPromptTouchEnd } = useTouchSort(handlePromptReorder);
+    // ── 条目左滑操作：复制 / 替换 / 导出 / 删除 ──
+    const swipe = useSwipeActions(192, 28);
 
-    // ── 条目左滑操作（微信式：左滑露出「新增/删除」） ──
-    const swipe = useSwipeActions();
-
-    const insertPromptAfter = (preset: PresetConfig, afterIdentifier: string) => {
-        const newPrompt = {
-            identifier: `prompt-${Date.now()}`,
-            name: "新提示词",
-            role: "system" as const,
-            content: "",
-            injection_depth: 0,
-            enabled: true,
+    const addGroupPrompt = (preset: PresetConfig, groupId: string) => {
+        const fresh: Prompt = {
+            identifier: createPresetEditorId("prompt"), name: "新提示词", role: "system", content: "",
+            injection_depth: 0, enabled: true, displayGroup: groupId,
+            tags: tagGroups.find(group => group.tags[0] === groupId)?.tags,
         };
-        // 与渲染一致的显示顺序（prompt_order + 孤儿条目）
-        const ordered = preset.prompt_order && preset.prompt_order.length > 0
-            ? preset.prompt_order.map(entry => preset.prompts.find(p => p.identifier === entry.identifier)).filter((p): p is Prompt => !!p)
-            : [...(preset.prompts || [])];
-        const orderedIds = new Set(ordered.map(p => p.identifier));
-        const orphans = (preset.prompts || []).filter(p => !orderedIds.has(p.identifier));
-        const displayed = [...ordered, ...orphans];
-        const idx = displayed.findIndex(p => p.identifier === afterIdentifier);
-        if (idx >= 0) displayed.splice(idx + 1, 0, newPrompt);
-        else displayed.push(newPrompt);
-        const newOrder = displayed.map(p => ({
-            identifier: p.identifier,
-            enabled: p.identifier === newPrompt.identifier
-                ? true
-                : (preset.prompt_order
-                    ? (preset.prompt_order.find(o => o.identifier === p.identifier)?.enabled ?? p.enabled)
-                    : p.enabled),
-        }));
-        updatePreset(preset.id, { prompts: displayed, prompt_order: newOrder });
-        swipe.close();
-        setEditingPromptId(newPrompt.identifier);
-        window.setTimeout(() => {
-            promptListRef.current
-                ?.querySelector(`[data-swipe-id="${newPrompt.identifier}"]`)
-                ?.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 80);
+        const displayed = orderedPresetPrompts(preset);
+        const last = displayed.reduce((position, prompt, index) => presetDisplayGroupKey(prompt) === groupId ? index : position, -1);
+        displayed.splice(last < 0 ? displayed.length : last + 1, 0, fresh);
+        updatePreset(preset.id, { prompts: displayed, prompt_order: displayed.map(prompt => ({ identifier: prompt.identifier, enabled: preset.prompt_order?.find(entry => entry.identifier === prompt.identifier)?.enabled ?? prompt.enabled })) });
+        setEditingPromptId(fresh.identifier);
+        window.setTimeout(() => promptListRef.current?.querySelector(`[data-swipe-id="${fresh.identifier}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
     };
 
+    const copyPrompt = (preset: PresetConfig, original: Prompt) => {
+        const copy: Prompt = { ...original, identifier: createPresetEditorId("prompt"), name: `${original.name}（副本）`, displayGroup: original.displayGroup === null ? null : presetDisplayGroupKey(original) };
+        const displayed = orderedPresetPrompts(preset);
+        displayed.splice(displayed.findIndex(prompt => prompt.identifier === original.identifier) + 1, 0, copy);
+        updatePreset(preset.id, { prompts: displayed, prompt_order: displayed.map(prompt => ({ identifier: prompt.identifier, enabled: preset.prompt_order?.find(entry => entry.identifier === (prompt.identifier === copy.identifier ? original.identifier : prompt.identifier))?.enabled ?? prompt.enabled })) });
+        swipe.close();
+    };
     // ── 条目级导入/导出（左滑「替换/导出」+ 底部「添加条目」菜单） ──
     const [addEntryMenuOpen, setAddEntryMenuOpen] = useState(false);
     const entryFileInputRef = useRef<HTMLInputElement>(null);
@@ -539,6 +475,8 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
             system_prompt: !!obj.system_prompt,
             forbid_overrides: !!obj.forbid_overrides,
         };
+        prompt.scopeAlternatives = normalizeScopeAlternatives(obj.scopeAlternatives);
+        prompt.displayGroup = typeof obj.displayGroup === "string" && obj.displayGroup.trim() ? obj.displayGroup.trim() : null;
         if (Array.isArray(obj.tags)) prompt.tags = obj.tags.filter((t): t is string => typeof t === "string");
         if (typeof obj.featureTag === "string") prompt.featureTag = obj.featureTag;
         if (typeof obj.followUpOnly === "boolean") prompt.followUpOnly = obj.followUpOnly;
@@ -549,12 +487,13 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
         const newPrompt = {
             identifier: `prompt-${Date.now()}`,
             name: "新提示词",
+            displayGroup: null,
             role: "system" as const,
             content: "",
             injection_depth: 0,
             enabled: true,
         };
-        const newPrompts = [...(preset.prompts || []), newPrompt];
+        const newPrompts = [...orderedPresetPrompts(preset), newPrompt];
         const newOrder = newPrompts.map(p => ({
             identifier: p.identifier,
             enabled: preset.prompt_order
@@ -581,7 +520,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
             used.add(id);
             return { ...p, identifier: id };
         });
-        const newPrompts = [...(preset.prompts || []), ...appended];
+        const newPrompts = [...orderedPresetPrompts(preset), ...appended];
         const newOrder = newPrompts.map(p => ({
             identifier: p.identifier,
             enabled: preset.prompt_order
@@ -607,7 +546,8 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
         const finalId = sanitized.identifier !== targetIdentifier && preset.prompts.some(p => p.identifier === sanitized.identifier)
             ? targetIdentifier
             : sanitized.identifier;
-        const finalPrompt = { ...sanitized, identifier: finalId };
+        const target = preset.prompts.find(prompt => prompt.identifier === targetIdentifier);
+        const finalPrompt = { ...sanitized, identifier: finalId, displayGroup: target?.displayGroup === null ? null : target ? presetDisplayGroupKey(target) : undefined };
         const newPrompts = preset.prompts.map(p => p.identifier === targetIdentifier ? finalPrompt : p);
         const newOrder = preset.prompt_order?.map(o => o.identifier === targetIdentifier ? { ...o, identifier: finalId } : o);
         updatePreset(preset.id, { prompts: newPrompts, ...(newOrder ? { prompt_order: newOrder } : {}) });
@@ -688,7 +628,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
     if (!isLoaded) return null; // loading state
 
     return (
-        <div ref={containerRef} className="flex flex-col gap-[24px] h-full">
+        <div ref={containerRef} data-preset-editor={isActive ? "active" : undefined} className={`${styles.page} flex flex-col gap-[24px] h-full`}>
             <input type="file" accept=".json" className="hidden" ref={fileInputRef} onChange={handleImport} />
             <input type="file" accept=".json" className="hidden" ref={entryFileInputRef} onChange={handleEntryImportFile} />
             {viewMode === "list" ? (
@@ -756,7 +696,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                         if (preset.id !== editingId) return null;
                         return (
                             <div key={preset.id} className="flex flex-col gap-4 pb-[24px]">
-                                <div className="flex justify-center gap-2">
+                                <div className={styles.actions}>
                                     <button
                                         type="button"
                                         onClick={() => duplicatePreset(preset)}
@@ -794,8 +734,8 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                         </button>
                                     )}
                                 </div>
-                                <h2 className="mx-2 mb-0 mt-2 ts-20 font-bold leading-none text-black">Preset Info</h2>
-                                <div className="ui-entry-card" style={{ cursor: "default" }}>
+                                <h2 className="mx-2 mb-0 mt-2 ts-20 font-bold leading-none text-black">预设信息</h2>
+                                <div className={`ui-entry-card ${styles.info}`} style={{ cursor: "default" }}>
                                         <div className="flex flex-col gap-2">
                                             <div className="flex justify-between items-center">
                                                 <label className="menu-label ts-13 font-semibold ml-1">预设名称</label>
@@ -822,124 +762,18 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
 
                                         {/* Collapsible: 生成参数 */}
                                         <div className="ui-collapsible">
-                                            <div
+                                            <button type="button" aria-expanded={paramsOpen}
                                                 onClick={() => setParamsOpen(!paramsOpen)}
                                                 className="ui-collapsible-header flex justify-between items-center select-none"
                                                 data-open={paramsOpen}
                                             >
                                                 <span className="menu-label ts-13 font-semibold">生成参数</span>
                                                 <ChevronDown size={16} className="text-[var(--c-text)]" style={{ transition: "transform 0.2s", transform: paramsOpen ? "rotate(180deg)" : "rotate(0deg)" }} />
-                                            </div>
+                                            </button>
                                             {paramsOpen && (
                                                 <div className="p-[14px]">
                                                     <div className="grid grid-cols-2 gap-3">
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex justify-between">
-                                                                <label className="ui-slider-label">Temperature</label>
-                                                                <span className="ui-slider-value">{preset.temperature.toFixed(2)}</span>
-                                                            </div>
-                                                            <input className="ui-slider" type="range" min="0" max="2" step="any" value={preset.temperature} onChange={(e) => updatePreset(preset.id, { temperature: Math.round(parseFloat(e.target.value) * 100) / 100 })} />
-                                                            <div className="ui-slider-hints">
-                                                                <span className="ui-slider-hint">稳定保守</span>
-                                                                <span className="ui-slider-hint">发散创造</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex justify-between">
-                                                                <label className="ui-slider-label">Top P</label>
-                                                                <span className="ui-slider-value">{preset.top_p.toFixed(2)}</span>
-                                                            </div>
-                                                            <input className="ui-slider" type="range" min="0" max="1" step="any" value={preset.top_p} onChange={(e) => updatePreset(preset.id, { top_p: Math.round(parseFloat(e.target.value) * 100) / 100 })} />
-                                                            <div className="ui-slider-hints">
-                                                                <span className="ui-slider-hint">用词精准</span>
-                                                                <span className="ui-slider-hint">词汇丰富</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex justify-between">
-                                                                <label className="ui-slider-label">Top K</label>
-                                                                <span className="ui-slider-value">{preset.top_k}</span>
-                                                            </div>
-                                                            <input className="ui-slider" type="range" min="0" max="100" step="1" value={preset.top_k} onChange={(e) => updatePreset(preset.id, { top_k: parseInt(e.target.value) })} />
-                                                            <div className="ui-slider-hints">
-                                                                <span className="ui-slider-hint">用词精准</span>
-                                                                <span className="ui-slider-hint">词汇丰富</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex justify-between">
-                                                                <label className="ui-slider-label">Min P</label>
-                                                                <span className="ui-slider-value">{(preset.min_p || 0).toFixed(2)}</span>
-                                                            </div>
-                                                            <input className="ui-slider" type="range" min="0" max="1" step="any" value={preset.min_p || 0} onChange={(e) => updatePreset(preset.id, { min_p: Math.round(parseFloat(e.target.value) * 100) / 100 })} />
-                                                            <div className="ui-slider-hints">
-                                                                <span className="ui-slider-hint">发散跳跃</span>
-                                                                <span className="ui-slider-hint">逻辑连贯</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex justify-between">
-                                                                <label className="ui-slider-label">Top A</label>
-                                                                <span className="ui-slider-value">{(preset.top_a || 0).toFixed(2)}</span>
-                                                            </div>
-                                                            <input className="ui-slider" type="range" min="0" max="1" step="any" value={preset.top_a || 0} onChange={(e) => updatePreset(preset.id, { top_a: Math.round(parseFloat(e.target.value) * 100) / 100 })} />
-                                                            <div className="ui-slider-hints">
-                                                                <span className="ui-slider-hint">自由发散</span>
-                                                                <span className="ui-slider-hint">限制胡言乱语</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex justify-between">
-                                                                <label className="ui-slider-label">Repetition Penalty</label>
-                                                                <span className="ui-slider-value">{preset.repetition_penalty.toFixed(2)}</span>
-                                                            </div>
-                                                            <input className="ui-slider" type="range" min="1" max="2" step="any" value={preset.repetition_penalty} onChange={(e) => updatePreset(preset.id, { repetition_penalty: Math.round(parseFloat(e.target.value) * 100) / 100 })} />
-                                                            <div className="ui-slider-hints">
-                                                                <span className="ui-slider-hint">允许重复</span>
-                                                                <span className="ui-slider-hint">极力惩罚重复</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex justify-between">
-                                                                <label className="ui-slider-label">Frequency Penalty</label>
-                                                                <span className="ui-slider-value">{preset.frequency_penalty.toFixed(2)}</span>
-                                                            </div>
-                                                            <input className="ui-slider" type="range" min="0" max="2" step="any" value={preset.frequency_penalty} onChange={(e) => updatePreset(preset.id, { frequency_penalty: Math.round(parseFloat(e.target.value) * 100) / 100 })} />
-                                                            <div className="ui-slider-hints">
-                                                                <span className="ui-slider-hint">自然口癖</span>
-                                                                <span className="ui-slider-hint">杜绝车轱辘话</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex justify-between">
-                                                                <label className="ui-slider-label">Presence Penalty</label>
-                                                                <span className="ui-slider-value">{preset.presence_penalty.toFixed(2)}</span>
-                                                            </div>
-                                                            <input className="ui-slider" type="range" min="0" max="2" step="any" value={preset.presence_penalty} onChange={(e) => updatePreset(preset.id, { presence_penalty: Math.round(parseFloat(e.target.value) * 100) / 100 })} />
-                                                            <div className="ui-slider-hints">
-                                                                <span className="ui-slider-hint">聚焦当前话题</span>
-                                                                <span className="ui-slider-hint">积极拓展新话题</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex flex-col gap-1 col-span-full">
-                                                            <div className="flex justify-between">
-                                                                <label className="ui-slider-label">Max Tokens</label>
-                                                                <span className="ui-slider-value">{preset.openai_max_tokens || "自动"}</span>
-                                                            </div>
-                                                            <input className="ui-slider" type="range" min="0" max="8192" step="128" value={preset.openai_max_tokens} onChange={(e) => updatePreset(preset.id, { openai_max_tokens: parseInt(e.target.value) })} />
-                                                            <div className="ui-slider-hints">
-                                                                <span className="ui-slider-hint">自动 (推荐)</span>
-                                                                <span className="ui-slider-hint">限制回复长度</span>
-                                                            </div>
-                                                        </div>
+                                                        <PresetGenerationControls preset={preset} onChange={updates => updatePreset(preset.id, updates)} />
 
                                                         <div className="flex flex-col gap-2 col-span-full">
                                                             <label className="ui-slider-label">剧情/线下模式摘要字段</label>
@@ -1029,35 +863,20 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
 
                                 {/* Prompts Section */}
                                 <div className="flex flex-col gap-4 mt-3">
-                                    <h2 className="mx-2 mb-0 mt-2 ts-20 font-bold leading-none text-black">Prompt Entries ({preset.prompts?.length || 0})</h2>
 
-                                    <div ref={promptListRef} className="flex flex-col gap-2"
-                                        onTouchMove={onPromptTouchMove}
-                                        onTouchEnd={onPromptTouchEnd}
-                                        onTouchCancel={onPromptTouchEnd}
-                                    >
-                                        {(() => {
-                                            // Display prompts in prompt_order sequence
-                                            const orderedPrompts = preset.prompt_order && preset.prompt_order.length > 0
-                                                ? preset.prompt_order
-                                                    .map(entry => preset.prompts.find(p => p.identifier === entry.identifier))
-                                                    .filter((p): p is Prompt => !!p)
-                                                : preset.prompts || [];
-                                            // Append any prompts not in prompt_order (orphans)
-                                            const orderedIds = new Set(orderedPrompts.map(p => p.identifier));
-                                            const orphans = (preset.prompts || []).filter(p => !orderedIds.has(p.identifier));
-                                            return [...orderedPrompts, ...orphans];
-                                        })().map((prompt, index) => {
+                                    <div ref={promptListRef}><PresetEntryGroups preset={preset} editingId={editingPromptId} onCollapse={() => setEditingPromptId(null)} onAdd={groupId => addGroupPrompt(preset, groupId)} onUpdate={updates => { updatePreset(preset.id, updates); if (updates.prompts && editingPromptId && !updates.prompts.some(prompt => prompt.identifier === editingPromptId)) setEditingPromptId(null); }} onReorder={displayed => {
+                                        const newOrder = displayed.map(p => ({
+                                            identifier: p.identifier,
+                                            enabled: preset.prompt_order?.find(o => o.identifier === p.identifier)?.enabled ?? p.enabled,
+                                        }));
+                                        updatePreset(preset.id, { prompts: displayed, prompt_order: newOrder });
+                                    }}>
+                                        {(prompt, index) => {
                                             const isEditing = editingPromptId === prompt.identifier;
                                             // Effective enabled: prompt_order overrides prompt.enabled
                                             const effectiveEnabled = preset.prompt_order
                                                 ? (preset.prompt_order.find(e => e.identifier === prompt.identifier)?.enabled ?? prompt.enabled)
                                                 : prompt.enabled;
-                                            const promptTags = getPromptTags(prompt);
-                                            const matchedTagGroup = findTagGroupForTags(tagGroups, promptTags);
-                                            const isCustomPromptTags = promptTags.length > 0 && !matchedTagGroup;
-                                            const selectedTagGroup = matchedTagGroup ?? tagGroups[0];
-                                            const selectedTagMinor = matchedTagGroup ? getPromptTagMinor(prompt, selectedTagGroup) : selectedTagGroup.minors[0];
 
                                             return (
                                                 <SwipeActionRow
@@ -1065,17 +884,19 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                     controller={swipe}
                                                     id={prompt.identifier}
                                                     disabled={isEditing}
-                                                    onTouchStart={isEditing ? undefined : (e) => onPromptTouchStart(index, e)}
+
                                                     actions={
                                                         <>
                                                             <button
                                                                 type="button"
                                                                 className="ui-swipe-action"
                                                                 data-variant="insert"
-                                                                onClick={() => insertPromptAfter(preset, prompt.identifier)}
+                                                                disabled={!!prompt.marker}
+                                                                title={prompt.marker ? "资料占位条目按唯一标识注入，不重复复制" : "复制条目"}
+                                                                onClick={() => copyPrompt(preset, prompt)}
                                                             >
-                                                                <Plus size={18} strokeWidth={2} />
-                                                                <span>新增</span>
+                                                                <Copy size={18} strokeWidth={2} />
+                                                                <span>复制</span>
                                                             </button>
                                                             <button
                                                                 type="button"
@@ -1119,6 +940,13 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                 >
                                                     <div
                                                     className="ui-entry-card"
+                                                    onClick={event => {
+                                                        const target = event.target as HTMLElement;
+                                                        if (target.closest("input, textarea, button, select, label, summary, details, a")) return;
+                                                        if (swipe.consumeClickSuppression()) return;
+                                                        if (swipe.openId || swipe.swipingId) { swipe.close(); return; }
+                                                        setEditingPromptId(isEditing ? null : prompt.identifier);
+                                                    }}
                                                     data-active={isEditing}
                                                     data-disabled={!effectiveEnabled}
                                                     style={{
@@ -1129,96 +957,27 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                 >
                                                     {/* Summary Row */}
                                                     <div
-                                                        onClick={() => {
-                                                            if (swipe.consumeClickSuppression()) return;
-                                                            if (swipe.openId || swipe.swipingId) {
-                                                                swipe.close();
-                                                                return;
+                                                        tabIndex={0}
+                                                        aria-label={`展开或收起${prompt.name}`}
+                                                        aria-expanded={isEditing}
+                                                        onKeyDown={event => {
+                                                            if (event.target === event.currentTarget && ["Enter", " "].includes(event.key)) {
+                                                                event.preventDefault();
+                                                                setEditingPromptId(isEditing ? null : prompt.identifier);
                                                             }
-                                                            setEditingPromptId(isEditing ? null : prompt.identifier);
                                                         }}
                                                         className="flex justify-between items-start gap-2 cursor-pointer"
                                                     >
                                                         <div className="flex gap-3 flex-1 min-w-0 items-start" style={{ cursor: isEditing ? "default" : "grab" }}>
-                                                            <div className="ui-entry-icon mt-[2px]">
-                                                                <MessageSquare size={20} />
-                                                            </div>
+
                                                             <div className="flex flex-col gap-1 flex-1">
                                                                 <div className="flex items-center gap-[6px]">
                                                                     {/* Drag Handle shown subtly */}
-                                                                    <GripVertical size={14} className="text-[var(--c-text)]" style={{ opacity: isEditing ? 0 : 0.5 }} />
-                                                                    <span className="menu-label ts-15 font-semibold break-all">
-                                                                        {prompt.name || "未命名提示词"}
-                                                                    </span>
-                                                                </div>
-                                                                {!isEditing && (
-                                                                    <div className="ts-12 flex items-center gap-[6px] flex-wrap mt-[2px]">
-                                                                        {prompt.marker && (
-                                                                            <span className="ui-status-tag" data-variant="warning">
-                                                                                Marker
-                                                                            </span>
-                                                                        )}
-                                                                        {!prompt.marker && (
-                                                                            <>
-                                                                                {/* Feature tag badge */}
-                                                                                <span className="ui-status-tag" data-variant={getPromptTags(prompt).length > 0 ? "success" : undefined}>
-                                                                                    {getPromptTagsLabel(prompt, tagProfiles)}
-                                                                                </span>
-                                                                            </>
-                                                                        )}
-                                                                        {/* System/User badge — shown for all entries */}
-                                                                        <span className="ui-status-tag">
-                                                                            {prompt.role === "system" ? "系统 (System)" : prompt.role === "assistant" ? "助手 (Assistant)" : "用户 (User)"}
-                                                                        </span>
-                                                                        {!prompt.marker && (
-                                                                            /* Depth badge — only for non-marker entries */
-                                                                            <span className="ui-status-tag" data-variant="action">
-                                                                                深度: {prompt.injection_depth}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-3 shrink-0 mt-[2px]">
-                                                            {/* Custom iOS-style Switch */}
-                                                            <label
-                                                                className="ui-mini-toggle"
-                                                                onClick={(e) => e.stopPropagation()}
-                                                            >
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={effectiveEnabled}
-                                                                    onChange={(e) => {
-                                                                        const checked = e.target.checked;
-                                                                        let newOrder = preset.prompt_order;
-                                                                        if (newOrder) {
-                                                                            newOrder = newOrder.map(entry =>
-                                                                                entry.identifier === prompt.identifier
-                                                                                    ? { ...entry, enabled: checked }
-                                                                                    : entry
-                                                                            );
-                                                                        }
-                                                                        updatePrompt(
-                                                                            preset,
-                                                                            prompt.identifier,
-                                                                            current => ({ ...current, enabled: checked }),
-                                                                            { prompt_order: newOrder },
-                                                                        );
-                                                                    }}
-                                                                    className="ui-mini-toggle-track"
-                                                                />
-                                                                <span className="ui-mini-toggle-thumb" />
-                                                            </label>
-                                                        </div>
-                                                    </div>
 
-                                                    {/* Detail Expanded Content */}
-                                                    {isEditing && (
-                                                        <div className="ui-entry-separator flex flex-col gap-3">
-                                                            <div className="flex justify-between items-start gap-2">
+                                                                    {isEditing ? (<label className="flex flex-1 min-w-0" onClick={event => event.stopPropagation()}><span className={styles.srOnly}>条目名称</span>
                                                                 <AutoResizeTextarea
-                                                                    value={prompt.name}
+                                                                    ariaLabel="条目名称"
+                                                                    value={prompt.name.replace(/^[▸▹▶►]\s*/, "")}
                                                                     onChange={(e) => {
                                                                         const nextName = e.target.value;
                                                                         // 名称命中 marker 固定名时自动补齐 identifier + marker（与桌宠填表同逻辑）
@@ -1257,9 +1016,50 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                                     }}
                                                                     placeholder="提示词名称 (例如: 主力 Prompt)"
                                                                     rows={1}
-                                                                    className="border-none bg-transparent ts-16 font-semibold outline-none flex-1 min-w-0 font-[inherit] py-1 px-0 text-[var(--c-text)]"
+                                                                    className="border-none bg-transparent ts-15 font-semibold outline-none flex-1 min-w-0 font-[inherit] py-1 px-0 text-[var(--c-text-title)]"
                                                                 />
+                                                            </label>) : (<span className="menu-label ts-15 font-semibold break-all">{prompt.name.replace(/^[▸▹▶►]\s*/, "") || "未命名提示词"}</span>)}
+                                                                </div>
+                                                                {!isEditing && <div className={styles.entrySubtitle}>{prompt.marker ? "资料占位" : getPromptTagsLabel(prompt, tagProfiles)}</div>}
+
                                                             </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-3 shrink-0 mt-[2px]">
+                                                            {/* Custom iOS-style Switch */}
+                                                            <label
+                                                                className="ui-mini-toggle"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={effectiveEnabled}
+                                                                    onChange={(e) => {
+                                                                        const checked = e.target.checked;
+                                                                        let newOrder = preset.prompt_order;
+                                                                        if (newOrder) {
+                                                                            newOrder = newOrder.map(entry =>
+                                                                                entry.identifier === prompt.identifier
+                                                                                    ? { ...entry, enabled: checked }
+                                                                                    : entry
+                                                                            );
+                                                                        }
+                                                                        updatePrompt(
+                                                                            preset,
+                                                                            prompt.identifier,
+                                                                            current => ({ ...current, enabled: checked }),
+                                                                            { prompt_order: newOrder },
+                                                                        );
+                                                                    }}
+                                                                    className="ui-mini-toggle-track"
+                                                                />
+                                                                <span className="ui-mini-toggle-thumb" />
+                                                            </label>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Detail Expanded Content */}
+                                                    {isEditing && (
+                                                        <div className="ui-entry-separator flex flex-col gap-3">
                                                             {!prompt.marker && (
                                                             <div className="relative">
                                                                 <textarea
@@ -1299,7 +1099,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                                         </select>
                                                                     </div>
                                                                     <div className={`flex flex-col gap-1 min-w-0${prompt.marker ? " opacity-40 pointer-events-none" : ""}`}>
-                                                                        <label className="menu-desc ts-11">Inject Depth</label>
+                                                                        <label className="menu-desc ts-11">注入深度</label>
                                                                         <input type="number" disabled={!!prompt.marker} value={prompt.injection_depth ?? 0} onChange={e => {
                                                                             updatePrompt(
                                                                                 preset,
@@ -1311,7 +1111,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                                 </div>
                                                                 <div className="grid grid-cols-2 gap-3">
                                                                     <div className={`flex flex-col gap-[2px] min-w-0${prompt.marker ? " opacity-40 pointer-events-none" : ""}`}>
-                                                                        <label className="menu-desc ts-11 ml-[2px]">Role</label>
+                                                                        <label className="menu-desc ts-11 ml-[2px]">注入角色</label>
                                                                         <select
                                                                             disabled={!!prompt.marker}
                                                                             value={prompt.role}
@@ -1329,51 +1129,10 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                                             <option value="assistant">Assistant</option>
                                                                         </select>
                                                                     </div>
-                                                                    <div className="flex flex-col gap-[2px] min-w-0">
+                                                                    <div className="flex flex-col gap-[2px] min-w-0 col-span-full">
                                                                         <label className="menu-desc ts-11 ml-[2px]">适用范围</label>
-                                                                        <div className="grid grid-cols-2 gap-2">
-                                                                            <select
-                                                                                value={isCustomPromptTags ? "__custom__" : selectedTagGroup.id}
-                                                                                onChange={(e) => {
-                                                                                    const group = tagGroups.find(item => item.id === e.target.value);
-                                                                                    const firstMinor = group?.minors[0];
-                                                                                    if (!firstMinor) return;
-                                                                                    updatePrompt(
-                                                                                        preset,
-                                                                                        prompt.identifier,
-                                                                                        current => ({ ...current, ...setPromptTags(firstMinor.tags) }),
-                                                                                    );
-                                                                                }}
-                                                                                className="ui-select ts-13 px-2 py-[6px] rounded-[6px]"
-                                                                            >
-                                                                                {isCustomPromptTags ? (
-                                                                                    <option value="__custom__">自定义</option>
-                                                                                ) : null}
-                                                                                {tagGroups.map((group) => (
-                                                                                    <option key={group.id} value={group.id}>{group.label}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                            <select
-                                                                                value={isCustomPromptTags ? "__custom__" : selectedTagMinor.id}
-                                                                                onChange={(e) => {
-                                                                                    const minor = selectedTagGroup.minors.find(item => item.id === e.target.value);
-                                                                                    if (!minor) return;
-                                                                                    updatePrompt(
-                                                                                        preset,
-                                                                                        prompt.identifier,
-                                                                                        current => ({ ...current, ...setPromptTags(minor.tags) }),
-                                                                                    );
-                                                                                }}
-                                                                                className="ui-select ts-13 px-2 py-[6px] rounded-[6px]"
-                                                                            >
-                                                                                {isCustomPromptTags ? (
-                                                                                    <option value="__custom__">自定义</option>
-                                                                                ) : null}
-                                                                                {selectedTagGroup.minors.map((minor) => (
-                                                                                    <option key={minor.id} value={minor.id}>{minor.label}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
+                                                                        {prompt.marker ? <span className="menu-desc ts-12">资料占位条目，按所在位置填入</span> : <PresetScopePicker prompt={prompt} groups={tagGroups} activeMenu={scopeMenu?.promptId === prompt.identifier ? scopeMenu.menu : null} onMenuChange={(menu, open) => setScopeMenu(current => open ? { promptId: prompt.identifier, menu } : current?.promptId === prompt.identifier && current.menu === menu ? null : current)} onChange={updates => updatePrompt(preset, prompt.identifier, current => ({ ...current, ...updates }))} />}
+
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -1389,7 +1148,7 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                                     Marker
                                                                 </label>
                                                                 <span className="menu-desc ts-11 whitespace-nowrap">
-                                                                    实际标签：{getPromptTagsInlineLabel(prompt)}
+                                                                    生效范围：{promptScopeLabel(prompt)}
                                                                 </span>
                                                             </div>
                                                         </div>
@@ -1397,13 +1156,13 @@ export function PresetManager({ isActive = true }: { isActive?: boolean } = {}) 
                                                     </div>
                                                 </SwipeActionRow>
                                             );
-                                        })}
+                                        }}
+                                    </PresetEntryGroups></div>
                                         {(!preset.prompts || preset.prompts.length === 0) && (
                                             <div className="menu-desc text-center ts-13 p-3">
                                                 空预设不会产生背景设定，请添加提示词条目。
                                             </div>
                                         )}
-                                    </div>
 
                                     <button
                                         type="button"

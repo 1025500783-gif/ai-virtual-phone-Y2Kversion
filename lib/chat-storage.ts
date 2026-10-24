@@ -8,6 +8,7 @@ import {
     dbReplaceContacts, dbReplaceSessions,
 } from "./chat-db";
 import { resolveUserIdentity } from "./settings-storage";
+import { clearChatRetryVersions } from "./chat-retry-version-store";
 import { assertCharacterIdentityAccess } from "./identity-access";
 import { captureMusicListeningContext } from "./music-listening-capture";
 import type { MusicListeningContext } from "./music-listening";
@@ -64,6 +65,8 @@ export type ChatSession = {
     customCSS?: string;
     isMuted?: boolean;
     bilingualTranslationEnabled?: boolean;
+    /** Translate user phrases reused in the character's own speech; defaults on. */
+    quoteTranslationEnabled?: boolean;
     collapseBilingualTranslation?: boolean;
     /** 丢弃角色输出的无效表情包（名称不在角色表情包与内置表情中时直接滤除该消息） */
     discardInvalidStickers?: boolean;
@@ -401,6 +404,9 @@ export type ChatAppSettings = {
     timeAware?: boolean; // When true, inject timestamps into prompt so AI knows message timing (default: true)
     promptViewerEnabled?: boolean; // When true, show the floating prompt viewer entry
     quickActionEnabled?: boolean; // When true, show the floating quick action entry
+    floatingToolsEnabled?: boolean; // Opt-in combined entry; legacy entries remain independent.
+    floatingToolsShortcut?: string;
+    floatingToolsPosition?: { edge: "left" | "right"; ratio: number };
     browserNotificationsEnabled?: boolean; // When true, send browser Notification API alerts when page is hidden
     enterToSendEnabled?: boolean; // When true, Enter sends chat input and Shift+Enter inserts a newline
     callVibrationEnabled?: boolean; // 语音/视频来电等待接听时循环振动（默认开；iOS 网页不支持振动则无效果）
@@ -1270,6 +1276,7 @@ export function createGroupSession(groupName: string, participantIds: string[], 
 }
 
 export function deleteChatSession(sessionId: string) {
+    clearChatRetryVersions(sessionId);
     const sessions = loadChatSessions();
     const filtered = sessions.filter(s => s.id !== sessionId);
     saveChatSessions(filtered);
@@ -1299,6 +1306,31 @@ export function loadChatMessages(sessionId: string, limit?: number): ChatMessage
     const all = getSortedSessionMessages(sessionId);
     if (limit && limit < all.length) return all.slice(-limit);
     return all;
+}
+
+/** Switch saved retry variants without replaying message/plugin/tool actions. */
+export async function restoreChatRetryMessages(sessionId: string, removeIds: string[], restored: ChatMessage[]): Promise<void> {
+    assertIdentityActive();
+    const identityId = getCurrentIdentityId();
+    if (restored.some(message => message.sessionId !== sessionId)) throw new Error("重试版本不属于当前会话");
+    const ids = new Set(removeIds);
+    const existing = new Map(_messagesCache.map(message => [message.id, message]));
+    if ([...ids].some(id => existing.has(id) && existing.get(id)?.sessionId !== sessionId)
+        || restored.some(message => existing.has(message.id) && existing.get(message.id)?.sessionId !== sessionId)) throw new Error("重试版本消息冲突");
+    await chatDb.transaction("rw", chatDb.messages, async () => {
+        await chatDb.messages.bulkDelete([...ids]);
+        if (restored.length) await chatDb.messages.bulkPut(restored);
+    });
+    assertIdentityActive();
+    if (getCurrentIdentityId() !== identityId) throw new Error("身份已切换，未更新旧会话缓存");
+    const restoredIds = new Set(restored.map(message => message.id));
+    _messagesCache = _messagesCache.filter(message => !ids.has(message.id) && !restoredIds.has(message.id)).concat(restored);
+    const last = getLastVisibleSessionMessage(sessionId);
+    saveChatSessions(loadChatSessions().map(session => session.id === sessionId ? {
+        ...session, lastMessageId: last?.id, lastMessagePreview: last ? getChatMessagePreview(last) : "",
+        ...(last ? { updatedAt: last.createdAt } : {}),
+    } : session));
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("chat-messages-updated", { detail: { sessionId } }));
 }
 
 function createMessageId(): string {
@@ -1773,6 +1805,7 @@ export function retractChatMessage(messageId: string) {
 }
 
 export function clearChatSessionMessages(sessionId: string) {
+    clearChatRetryVersions(sessionId, "online");
     const deletedMessages = _messagesCache.filter(m => m.sessionId === sessionId);
     _messagesCache = _messagesCache.filter(m => m.sessionId !== sessionId);
     dbDeleteMessagesBySession(sessionId);

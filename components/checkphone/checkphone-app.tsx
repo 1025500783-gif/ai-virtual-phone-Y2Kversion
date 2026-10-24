@@ -64,7 +64,7 @@ import { CheckPhoneWeiboPage } from "@/components/checkphone/checkphone-weibo-pa
 import { CheckPhoneXiaohongshuPage } from "@/components/checkphone/checkphone-xiaohongshu-page";
 import { CheckPhoneXPage } from "@/components/checkphone/checkphone-x-page";
 import { CheckPhoneYoutubePage } from "@/components/checkphone/checkphone-youtube-page";
-import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
+import { loadActivityCharacters as loadCharacters } from "@/lib/chat-app-characters";
 import type { Character } from "@/lib/character-types";
 import {
   CHECKPHONE_APP_SPECS,

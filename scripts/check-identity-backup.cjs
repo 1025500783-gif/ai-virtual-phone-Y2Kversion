@@ -50,12 +50,17 @@ const sources = Object.fromEntries(files.map(path => [path.split('/').at(-1), ts
         { key: 'ai_phone_photo_album_v1', value: JSON.stringify([{ id: 'photo', caption: 'A photo' }]) },
         { key: 'identity:B:ai_phone_photo_album_v1', value: JSON.stringify([{ id: 'photo', caption: 'B photo' }]) },
         { key: 'identity:B:wallet', value: '200' }, { key: 'wallet', value: '100' },
+        { key: 'ai_phone_chat_retry_versions:qa', value: JSON.stringify([{ id: 'retry-fixture', versions: ['original', 'retry'] }]) },
       ]); db.close();
       localStorage.setItem('private-note', 'A note'); localStorage.setItem('identity:B:private-note', 'B note');
       await makeDb('AiPhoneChatDB', [{ id: 'same', text: 'A chat', file: new Blob(['A image'], { type: 'image/png' }) }]);
       await makeDb('AiPhoneChatDB::identity:B', [{ id: 'same', text: 'B chat', file: new Blob(['B image']) }]);
       await module('kv-db').hydrateKvDb();
       const backup = module('backup');
+      const chatModule = module('modules').DATA_MODULES.find(item => item.id === 'chat');
+      check(chatModule.sources.some(source => source.type === 'kv' && source.prefixes?.includes('ai_phone_chat_retry_versions:')), 'Chat module must own retry archives');
+      const chatOnly = await backup.readBackupBlob((await backup.createBackupBlob(['chat'], { scope: 'current' })).blob);
+      check(JSON.stringify(chatOnly).includes('retry-fixture'), 'Chat-only backup omitted retry versions');
       const current = await backup.createBackupBlob(undefined, { scope: 'current' });
       const currentPayload = await backup.readBackupBlob(current.blob);
       const currentJson = JSON.stringify(currentPayload);
@@ -77,6 +82,7 @@ const sources = Object.fromEntries(files.map(path => [path.split('/').at(-1), ts
       check(!restored.errors.length, restored.errors.join(';'));
       check((await rows('AiPhoneChatDB'))[0].text === 'A chat', 'Explicit restore missed A');
       check((await rows('AiPhoneChatDB'))[0].file instanceof Blob, 'Binary media lost');
+      check((await rawKv('ai_phone_chat_retry_versions:qa')).includes('retry-fixture'), 'Retry archive lost during restore');
       check((await rows('AiPhoneChatDB::identity:B'))[0].text === 'B newer', 'Current restore touched B');
       check(module('kv-db').kvGet('ai_phone_characters_v1').includes('Newer shared'), 'Private overwrite replaced shared data');
       const broken = await module('idb').importSource({type:'kv',owner:{kind:'user',userId:'B'},records:[{key:'ai_phone_photo_album_v1',value:JSON.stringify([{__aiPhoneMediaRef:true,ref:'f'.repeat(64),encoding:'dataurl',mimeType:'image/png'}])}]},true,async()=>{throw Error('Synthetic interrupted media download')});

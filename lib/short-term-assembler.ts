@@ -3,6 +3,7 @@
 // a unified timeline. Replaces the old ShortTermEvent IndexedDB approach.
 // Used by: memory-bank-page (UI display), memory-summarizer (summarization input).
 
+import { voiceHistoryText } from "./voice-expression";
 import { isReadingDiscussMessage, isSystemInstructionMessage, loadChatSessions, loadChatMessages, type ChatMessage } from "./chat-storage";
 import { buildGroupAdminBracketText } from "./group-admin";
 import { loadMomentPosts, loadMomentComments } from "./moments-storage";
@@ -220,7 +221,7 @@ export function loadNativeTimeline(
             // Represent rich media as text when content is empty
             else if (!content && msg.mediaType) {
                 if (msg.mediaType === "sticker") content = `[表情包:${msg.mediaData?.label || "贴纸"}]`;
-                else if (msg.mediaType === "audio") content = `[语音条:${msg.mediaData?.label || "语音消息"}]`;
+                else if (msg.mediaType === "audio") content = `[语音条:${voiceHistoryText(msg.mediaData?.label ?? "", msg.mediaData?.speechText)}]`;
                 else if (msg.mediaType === "image") content = formatPhotoDirectiveForPrompt(msg);
                 else if (msg.mediaType === "red_packet") {
                     const cnt = msg.mediaData?.count;
@@ -339,7 +340,7 @@ export function loadNativeTimeline(
             // Represent rich media as text when content is empty
             else if (!content && msg.mediaType) {
                 if (msg.mediaType === "sticker") content = `[表情包:${msg.mediaData?.label || "贴纸"}]`;
-                else if (msg.mediaType === "audio") content = `[语音条:${msg.mediaData?.label || "语音消息"}]`;
+                else if (msg.mediaType === "audio") content = `[语音条:${voiceHistoryText(msg.mediaData?.label ?? "", msg.mediaData?.speechText)}]`;
                 else if (msg.mediaType === "image") content = formatPhotoDirectiveForPrompt(msg);
                 else if (msg.mediaType === "red_packet") content = `[红包:${msg.mediaData?.amount ?? 0}:${msg.mediaData?.label || "恭喜发财"}]`;
                 else if (msg.mediaType === "transfer") content = `[转账:${msg.mediaData?.amount ?? 0}:${msg.mediaData?.currency || "CNY"}:${msg.mediaData?.label || "转账"}]`;

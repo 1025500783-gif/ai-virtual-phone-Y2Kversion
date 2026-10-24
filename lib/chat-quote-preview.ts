@@ -6,7 +6,7 @@ import { currencySymbol, normalizeCurrency } from "./exchange-rates";
 export function normalizeQuotePreviewText(value: string): string {
     const text = value.trim();
     if (!text) return "";
-    return splitBilingualText(text)?.original || text;
+    return splitBilingualText(text, { allowUnchangedTranslation: true })?.original || text;
 }
 
 function formatQuoteAmount(value: unknown): string {

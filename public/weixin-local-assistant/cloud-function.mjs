@@ -1143,6 +1143,17 @@ function buildChatCompletionRequest(apiConfig, preset, messages) {
   if (Number(preset?.top_k) > 0) body.top_k = Number(preset.top_k);
   if (Number(preset?.min_p) > 0) body.min_p = Number(preset.min_p);
   if (Number(preset?.top_a) > 0) body.top_a = Number(preset.top_a);
+  // Explicit preset choices also apply to background/local assistant requests.
+  if (Array.isArray(preset?.enabled_generation_parameters)) {
+    const enabled = new Set(preset.enabled_generation_parameters);
+    const defaults = { temperature: 0.8, top_p: 1, top_k: 0, min_p: 0, top_a: 0, repetition_penalty: 1, frequency_penalty: 0, presence_penalty: 0 };
+    for (const [key, fallback] of Object.entries(defaults)) {
+      if (enabled.has(key)) body[key] = numberOrDefault(preset?.[key], fallback);
+      else delete body[key];
+    }
+    if (!enabled.has("max_tokens")) delete body.max_tokens;
+  }
+
 
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
   if (baseUrl.includes("openrouter.ai")) {

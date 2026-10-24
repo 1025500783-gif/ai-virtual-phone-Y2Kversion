@@ -47,10 +47,11 @@ function appRecord(characterId: string): AvatarRecord | undefined {
 export function getChatCharacterAvatar(session: Pick<ChatSession, "characterAvatars"> | null | undefined, character: Pick<Character, "id" | "avatar"> | null | undefined): string | null {
     if (!character) return null;
     const shared = appRecord(character.id);
-    if (shared) return shared.avatar;
-    return Object.prototype.hasOwnProperty.call(session?.characterAvatars || {}, character.id)
+    const avatar = shared ? shared.avatar : Object.prototype.hasOwnProperty.call(session?.characterAvatars || {}, character.id)
         ? session!.characterAvatars![character.id] ?? null
-        : character.avatar;
+        : null;
+    // A cleared chat avatar restores the profile fallback. Read the profile last.
+    return avatar?.trim() ? avatar : character.avatar || null;
 }
 
 export function getChatCharacterAvatarHistory(session: Pick<ChatSession, "characterAvatarHistories"> | null | undefined, characterId: string): CharacterAvatarHistoryEntry[] {

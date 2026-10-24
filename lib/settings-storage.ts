@@ -1,3 +1,6 @@
+import { normalizePresetGroups } from "./preset-order";
+import { normalizeScopeAlternatives } from "./preset-scope";
+import { isGenerationParameterKey } from "./generation-parameters";
 import type {
     PresetConfig,
     WorldBookConfig,
@@ -302,6 +305,8 @@ export function parsePresetFromJson(text: string, fallbackName: string = "导入
 
         const preset = createPreset(obj.name || fallbackName);
 
+        if (Array.isArray(obj.enabled_generation_parameters)) preset.enabled_generation_parameters = [...new Set(obj.enabled_generation_parameters.filter(isGenerationParameterKey))] as import("./settings-types").GenerationParameterKey[];
+
         // Extract basic fields
         if (typeof obj.temperature === "number") preset.temperature = obj.temperature;
         if (typeof obj.top_p === "number") preset.top_p = obj.top_p;
@@ -352,11 +357,16 @@ export function parsePresetFromJson(text: string, fallbackName: string = "导入
                 marker: Boolean(p.marker || false),
                 forbid_overrides: Boolean(p.forbid_overrides || false),
                 injection_position: Number(p.injection_position) || 0,
+                scopeAlternatives: normalizeScopeAlternatives(p.scopeAlternatives),
+                displayGroup: p.displayGroup === null ? null : typeof p.displayGroup === "string" && p.displayGroup.trim() ? p.displayGroup.trim() : undefined,
                 featureTag: p.featureTag || undefined,
                 followUpOnly: p.followUpOnly === true ? true : undefined,
                 tags: Array.isArray(p.tags) && p.tags.length > 0 ? p.tags.map(String) : undefined,
             }));
         }
+
+        preset.displayGroups = normalizePresetGroups(obj.displayGroups);
+        if (obj.groupingVersion === 1) preset.groupingVersion = 1;
 
         // Parse prompt_order from the current flat export format.
         if (Array.isArray(obj.prompt_order)) {
@@ -901,6 +911,7 @@ export function resolveBinding(
         presetId: global.presetId,
         userIdentityId: global.userIdentityId,
         worldBookIds: global.worldBookIds ? [...global.worldBookIds] : undefined,
+        worldBookMode: global.worldBookMode,
         regexIds: global.regexIds ? [...global.regexIds] : undefined,
     };
 
@@ -908,7 +919,10 @@ export function resolveBinding(
         if (slot.apiConfigId) resolved.apiConfigId = slot.apiConfigId;
         if (slot.voiceConfigId) resolved.voiceConfigId = slot.voiceConfigId;
         if (slot.presetId) resolved.presetId = slot.presetId;
-        if (slot.worldBookIds && slot.worldBookIds.length > 0) resolved.worldBookIds = [...slot.worldBookIds];
+        if (slot.worldBookMode === "replace" || (slot.worldBookIds && slot.worldBookIds.length > 0)) {
+            resolved.worldBookIds = [...(slot.worldBookIds || [])];
+            resolved.worldBookMode = slot.worldBookMode;
+        }
         if (slot.regexIds && slot.regexIds.length > 0) resolved.regexIds = [...slot.regexIds];
     };
 
@@ -1075,11 +1089,12 @@ export function saveUserIdentities(identities: UserIdentity[]): void {
     identities = identities.map(identity => {
         const old = previous.find(item => item.id === identity.id);
         return old
-            ? { ...identity, previousNames: [...new Set([...(old.previousNames ?? []), ...(identity.previousNames ?? []), ...(old.name !== identity.name ? [old.name] : [])])] }
+            ? { ...identity, chatAvatarUrl: identity.chatAvatarUrl ?? old.chatAvatarUrl, previousNames: [...new Set([...(old.previousNames ?? []), ...(identity.previousNames ?? []), ...(old.name !== identity.name ? [old.name] : [])])] }
             : identity;
     });
     kvSet(USER_IDENTITIES_KEY, JSON.stringify(identities));
     updateIdentityDirectory(identities);
+    window.dispatchEvent?.(new Event("user-identities-updated"));
 }
 
 /**
@@ -1090,13 +1105,16 @@ export function saveUserIdentities(identities: UserIdentity[]): void {
 export function resolveUserIdentity(characterId?: string, appId?: string): UserIdentity | null {
     const identities = loadUserIdentities();
     if (identities.length === 0) return null;
-    if (isIdentityInitialized()) return identities.find(identity => identity.id === getCurrentIdentityId()) ?? null;
+    // Activity identities use the chat avatar; profile editors read loadUserIdentities().
+    const forApp = (identity: UserIdentity | null): UserIdentity | null => identity
+        ? { ...identity, avatarUrl: identity.chatAvatarUrl?.trim() ? identity.chatAvatarUrl : identity.avatarUrl } : null;
+    if (isIdentityInitialized()) return forApp(identities.find(identity => identity.id === getCurrentIdentityId()) ?? null);
     const config = loadBindingConfig();
     const resolved = resolveBinding(config, characterId, appId);
     if (resolved.userIdentityId) {
-        return identities.find(i => i.id === resolved.userIdentityId) || identities[0];
+        return forApp(identities.find(i => i.id === resolved.userIdentityId) || identities[0]);
     }
-    return identities[0];
+    return forApp(identities[0]);
 }
 
 // --- Migration from legacy CharacterSettingsOverride ---

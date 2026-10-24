@@ -1,3 +1,4 @@
+import { lifePrompt } from "./user-portrait-context";
 // lib/group-chat-engine.ts
 // Group chat engine: single API call for all characters.
 
@@ -508,6 +509,7 @@ export async function buildGroupChatPromptMessages(
         spectatorContext,
         customAppRichMediaDirectives,
         chatBilingualInstruction,
+        quoteTranslationEnabled: session.quoteTranslationEnabled,
         statusRegionSection: resolveStatusRegionSection(statusRegionCfg, "group"),
         statusRegionExampleLine: resolveStatusRegionExampleLine(statusRegionCfg),
         statusRegionComposition: resolveStatusRegionComposition(statusRegionCfg),
@@ -563,6 +565,14 @@ export async function buildGroupChatPromptMessages(
         }
     }
 
+    if (!promptProfile) {
+        const portraitPrompt = lifePrompt(session, [], config.enableImageRecognition === true);
+        if (portraitPrompt) llmMessages.push({ role: "system", content: portraitPrompt });
+        if (config.enableImageRecognition && userIdentity?.portraitEnabled && userIdentity.portraitUrl && (!userIdentity.portraitDescription || promptHistory.some(m => m.role === "user" && m.mediaUrl))) {
+            const portrait = await resolveCompressedImageDataUrl(userIdentity.portraitUrl);
+            if (portrait) llmMessages.push({ role: "user", content: [{ type: "text", text: "[图片ID:user-portrait] 用户本人肖像参考；不是新聊天图片。请在 float_state.photos 中记录客观外貌描述，id 填 user-portrait。结合文字设定辨认，无法确定合照人物时询问。" }, { type: "image_url", image_url: { url: portrait, detail: "low" } }] });
+        }
+    }
     return { llmMessages, config, preset, regexes, nameToId, memberNames, enabledTools, userName, appTags: activeAppTags };
 }
 

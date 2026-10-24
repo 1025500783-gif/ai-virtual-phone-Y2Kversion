@@ -1,4 +1,5 @@
 "use client";
+import { voiceDisplayText, voicePlaybackText } from "@/lib/voice-expression";
 import { LyricShareCard } from "@/components/music/lyric-share-card";
 import { ListeningInviteCard } from "./listening-invite-card";
 import { getCurrentIdentityId } from "@/lib/identity-runtime";
@@ -633,10 +634,12 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
     htmlFrameVariant?: ChatHtmlFrameVariant;
     chatText?: boolean;
 }) {
-    const bilingual = splitBilingualText(text, { allowUnchangedTranslation: chatText });
+    const bilingual = splitBilingualText(text, { allowUnchangedTranslation: true });
     const [showTranslated, setShowTranslated] = useState(false);
     const [originalWidth, setOriginalWidth] = useState<number | null>(null);
     const originalRef = useRef<HTMLDivElement>(null);
+    const translationPressRef = useRef<{ x: number; y: number; startedAt: number; moved: boolean } | null>(null);
+    const suppressTranslationClickRef = useRef(false);
     useEffect(() => {
         setShowTranslated(false);
     }, [text]);
@@ -663,18 +666,21 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
         return renderContent(text, className);
     }
 
-    // A repeated Latin word is not a Chinese translation. Do not fabricate one
-    // or render the same English twice; retain original and expose missing text.
-    if (chatText && !containsChinese(bilingual.translated)) {
+    // An explicit unchanged pair (e.g. Lars|Lars) preserves the original once.
+    if (!containsChinese(bilingual.translated)) {
         return <div className="chat-bilingual-block" data-chat-text-layout="">
             <div className="chat-bilingual-section">{renderContent(bilingual.original, "chat-bilingual-content")}</div>
-            {/[a-z]/i.test(bilingual.translated) && <span className="chat-text-missing-translation">未提供中文译文</span>}
         </div>;
     }
 
     const toggleTranslation = (event: React.MouseEvent<HTMLDivElement>) => {
         if (defaultExpanded) return;
-        if ((event.target as HTMLElement).closest("a,button,input,textarea,select,[role='button']")) return;
+        if (suppressTranslationClickRef.current) {
+            suppressTranslationClickRef.current = false;
+            return;
+        }
+        const interactive = (event.target as HTMLElement).closest("a,button,input,textarea,select,[role='button']");
+        if (interactive && interactive !== event.currentTarget && event.currentTarget.contains(interactive)) return;
         event.stopPropagation();
         setShowTranslated(value => !value);
     };
@@ -683,6 +689,31 @@ export const BilingualTextBlock = memo(function BilingualTextBlock({
         <div
             className={`chat-bilingual-block ${defaultExpanded ? "chat-bilingual-block-auto" : "chat-bilingual-block-switch"} ${className ?? ""}`.trim()}
             data-chat-text-layout={chatText || undefined}
+            onPointerDownCapture={event => {
+                suppressTranslationClickRef.current = false;
+                translationPressRef.current = { x: event.clientX, y: event.clientY, startedAt: event.timeStamp, moved: false };
+            }}
+            onPointerMoveCapture={event => {
+                const press = translationPressRef.current;
+                if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) >= 8) press.moved = true;
+            }}
+            onPointerUpCapture={event => {
+                const press = translationPressRef.current;
+                suppressTranslationClickRef.current = Boolean(press && (press.moved || event.timeStamp - press.startedAt >= 500));
+                translationPressRef.current = null;
+                // WebKit can suppress click after the chat's pointerdown prevents default.
+                if (event.pointerType === "touch" && !defaultExpanded && !suppressTranslationClickRef.current) {
+                    const interactive = (event.target as HTMLElement).closest("a,button,input,textarea,select,[role='button']");
+                    if (!interactive || interactive === event.currentTarget || !event.currentTarget.contains(interactive)) {
+                        setShowTranslated(value => !value);
+                        suppressTranslationClickRef.current = true;
+                    }
+                }
+            }}
+            onPointerCancelCapture={() => {
+                translationPressRef.current = null;
+                suppressTranslationClickRef.current = true;
+            }}
             onClick={toggleTranslation}
             role={defaultExpanded ? undefined : "button"}
             tabIndex={defaultExpanded ? undefined : 0}
@@ -1764,7 +1795,7 @@ function SingleImageBubble({
     return (
         <div className="chat-generated-image-retry-stack">
             <div
-                className="chat-photo-card w-[180px] aspect-square rounded-none"
+                className="chat-photo-card chat-photo-card--text w-[180px] aspect-square rounded-none"
                 style={{ cursor: "pointer" }}
                 onClick={e => { e.stopPropagation(); setShowPreview(true); }}
             >
@@ -2742,12 +2773,11 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const mountedRef = useRef(true);
     useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
-    const text = msg.mediaData?.label || "语音消息";
-    const bilingual = splitBilingualText(text);
-    const authoredSpeech = msg.mediaData?.speechText;
-    // Edited transcripts must not keep speaking an older line from stored directions.
-    const speechMatchesTranscript = authoredSpeech?.replace(/\[[a-zA-Z][a-zA-Z ,'-]{0,100}\]/g, "").trim() === text.trim();
-    const speechText = authoredSpeech && speechMatchesTranscript ? (splitBilingualText(authoredSpeech)?.original || authoredSpeech) : bilingual?.original || text;
+    const transcript = msg.mediaData?.label ?? "";
+    const text = voiceDisplayText(transcript) || "语音消息";
+    const bilingual = splitBilingualText(text, { allowUnchangedTranslation: true });
+    const authoredSpeech = voicePlaybackText(transcript, msg.mediaData?.speechText);
+    const speechText = (splitBilingualText(authoredSpeech, { allowUnchangedTranslation: true })?.original || authoredSpeech) || bilingual?.original || text;
     const synthesizedFromText = msg.mediaData?.synthesizedFromText;
     const needsResynthesis = msg.role !== "user" && synthesizedFromText !== speechText;
     const duration = msg.mediaData?.voiceDuration || Math.max(2, Math.ceil(speechText.length / 4));

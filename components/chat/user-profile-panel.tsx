@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useMemo, type CSSProperties } from "react";
 import CSSSchemeBar from "@/components/ui/css-scheme-picker";
+import { readProfileImage } from "@/components/settings/user-portrait-settings";
+import { loadUserIdentities, saveUserIdentities } from "@/lib/settings-storage";
+import { getCurrentIdentityId } from "@/lib/identity-runtime";
 import {
     loadFollowUpConfig,
     saveFollowUpConfig,
@@ -157,6 +160,8 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
     const [showMomentsSettings, setShowMomentsSettings] = useState(false);
     const [showWalletPanel, setShowWalletPanel] = useState(false);
     const [identity, setIdentity] = useState<UserIdentity | null>(null);
+    const [avatarError, setAvatarError] = useState("");
+    const [avatarBusy, setAvatarBusy] = useState(false);
     const [notifEnabled, setNotifEnabled] = useState(false);
     const [notifHint, setNotifHint] = useState<string | null>(null);
     const [notifChecking, setNotifChecking] = useState(false);
@@ -335,6 +340,21 @@ export function UserProfilePanel({ onClose, className }: UserProfilePanelProps) 
                                     <User size={38} color="var(--c-icon)" />
                                 )}
                             </div>
+                            <label className="ui-link-btn mt-2 cursor-pointer">{avatarBusy ? "处理中…" : "更换聊天头像"}<input type="file" accept="image/*" className="sr-only" disabled={avatarBusy || !identity} onChange={async e => {
+                                const file = e.target.files?.[0]; e.target.value = ""; if (!file || !identity) return;
+                                const id = identity.id; const active = getCurrentIdentityId();
+                                setAvatarBusy(true); setAvatarError("");
+                                try {
+                                    const chatAvatarUrl = await readProfileImage(file);
+                                    if (getCurrentIdentityId() !== active) return;
+                                    saveUserIdentities(loadUserIdentities().map(item => item.id === id ? { ...item, chatAvatarUrl } : item));
+                                    setIdentity(resolveUserIdentity());
+                                    window.dispatchEvent(new Event("settings-updated"));
+                                    window.dispatchEvent(new Event("moments-updated"));
+                                } catch (error) { setAvatarError(error instanceof Error ? error.message : "头像保存失败"); }
+                                finally { setAvatarBusy(false); }
+                            }}/></label>
+                            {avatarError && <p role="alert" className="menu-desc">{avatarError}</p>}
                         </div>
 
                         {/* Info & Stats */}

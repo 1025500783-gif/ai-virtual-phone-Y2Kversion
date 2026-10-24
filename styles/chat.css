@@ -1421,6 +1421,24 @@
   background: #ffffff;
 }
 
+.chat-photo-card--text {
+  overflow: hidden;
+}
+
+.chat-photo-card--text .chat-photo-card-placeholder {
+  min-height: 0;
+  overflow: hidden;
+  padding-block: 16px;
+}
+
+.chat-photo-card--text .chat-photo-card-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  max-height: 100%;
+  overflow: hidden;
+}
+
 .chat-photo-card-text {
   max-width: 84%;
   color: var(--c-text-title);

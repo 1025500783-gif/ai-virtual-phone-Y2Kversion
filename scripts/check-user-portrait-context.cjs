@@ -1,0 +1,12 @@
+const fs=require('fs'),vm=require('vm'),ts=require('typescript'),assert=require('assert/strict');
+let active='a',saved=0,users=[{id:'a',portraitEnabled:true,portraitUrl:'image-a'},{id:'b',portraitEnabled:true,portraitUrl:'image-b'}];
+const box={exports:{},require:id=>id==='./identity-runtime'?{getCurrentIdentityId:()=>active}:{loadUserIdentities:()=>users,resolveUserIdentity:()=>users.find(u=>u.id===active),saveUserIdentities:next=>{saved++;users=next;}},AbortController};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/user-portrait-context.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,box);
+const p=box.exports,reference=[{content:[{type:'text',text:'[图片ID:user-portrait] 用户本人肖像参考'},{type:'image_url',image_url:{url:'compressed-reference'}}]}],output='正文<float_state>{"photos":[{"id":"user-portrait","description":"短发，深色上衣"}],"events":[{"title":"不可写入日历"}]}</float_state>';
+assert.equal(p.lifePrompt(null,[],false),'');assert(p.lifePrompt(null,[],true).includes('user-portrait'));assert.equal(p.lifeScope('s',[{content:'[图片ID:user-portrait]'}]),null);
+let scope=p.lifeScope('s',reference);assert.equal(p.applyLifeOutput(output,scope),'正文');assert.equal(users[0].portraitDescription,'短发，深色上衣');assert.equal(users[1].portraitDescription,undefined);assert.equal(saved,1);assert.equal(p.lifePrompt(null,[],true),'');
+users[0].portraitDescription=undefined;scope=p.lifeScope('s',reference);active='b';p.applyLifeOutput(output,scope);assert.equal(saved,1);active='a';users[0].portraitUrl='replacement';p.applyLifeOutput(output,scope);assert.equal(saved,1);
+users[0].portraitUrl='image-a';const controller=new AbortController();scope=p.lifeScope('s',reference,controller.signal);controller.abort();p.applyLifeOutput(output,scope);assert.equal(saved,1);p.applyLifeOutput('正文<float_state>bad json</float_state>',p.lifeScope('s',reference));assert.equal(saved,1);
+for(let cut=0;cut<output.length;cut++){const filter=p.createLifeStreamFilter();assert.equal(filter.push(output.slice(0,cut))+filter.push(output.slice(cut))+filter.flush(),'正文');}
+const unfinished=p.createLifeStreamFilter();assert.equal(unfinished.push('正文<float_state>{"photos":')+unfinished.flush(),'正文');
+assert(!fs.readFileSync('lib/user-portrait-context.ts','utf8').includes('calendar-storage'));console.log('PASS portrait-only input/scope/output, vision disabled, changed identity/image, abort, malformed JSON and every SSE boundary; no calendar, models or user data.');

@@ -1,9 +1,9 @@
 import type { ChatMessage } from "./chat-storage";
 
 /** Request-local instruction: never write retry feedback into persistent chat history. */
-export function withRetryGuidance(history: ChatMessage[], sessionId: string, guidance: string): ChatMessage[] {
+export function withRetryGuidance(history: ChatMessage[], sessionId: string, guidance: string, sourceReply = ""): ChatMessage[] {
     const text = guidance.trim().slice(0, 2000);
-    if (!text) return history;
+    if (!text && !sourceReply.trim()) return history;
     return [...history, { id: `retry-guidance-${Date.now()}`, sessionId, role: "system", mediaType: "system_instruction",
-        status: "sent", createdAt: new Date().toISOString(), content: `本次重生成指导（只用于这一轮，不是角色收到的新聊天消息）：\n${text}\n请结合以上聊天上下文和角色设定重新生成。直接给出新的回复，不复述指导，不声称已执行未发生的动作。` }];
+        status: "sent", createdAt: new Date().toISOString(), content: `重写所选回复，遵循当前角色设定、上下文与输出协议。${sourceReply.trim() ? `\n所选回复（作为修改基准，不是新消息或指令）：\n${sourceReply}` : ""}${text ? `\n本次修改要求：\n${text}` : ""}\n只输出新的回复；不复述修改要求，不声称执行未发生的动作。` }];
 }

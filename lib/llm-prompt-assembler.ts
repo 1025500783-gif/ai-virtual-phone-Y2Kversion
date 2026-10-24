@@ -14,6 +14,7 @@ import { MacroEngine, postProcessTrim } from "./macro-engine";
 import type { RecentBlock, UnifiedRecentItem } from "./short-term-assembler";
 import { readDwellingLayoutCache } from "./dwelling-storage";
 import { formatDwellingContext } from "./dwelling-engine";
+import { matchesPromptScope } from "./preset-scope";
 import { matchesActiveTags } from "./content-tag-utils";
 import { formatXiaohongshuShareForPrompt } from "./chat-share";
 import { stripStateAndInnerForPrompt } from "./prompt-sanitizer";
@@ -25,11 +26,10 @@ import { buildGroupAdminBracketText } from "./group-admin";
 import { describePhotoAnnotations } from "./chat-photo-markup";
 import { PHOTO_DOODLE_GUIDANCE } from "./photo-doodle";
 import { TRANSFER_CURRENCY_GUIDANCE } from "./transfer-protocol";
-import { voiceExpressionInstruction } from "./voice-expression";
+import { voiceExpressionInstruction, voiceHistoryText } from "./voice-expression";
+import { buildChatQuotationInstruction } from "./chat-quotation";
 import { walletCurrencyInstruction, CHARACTER_CURRENCY_INSTRUCTION } from "./currency-context";
 import { albumChatContext } from "./photo-album-discussion";
-
-
 import { loadMomentsConfig } from "./moments-storage";
 import { buildMomentsBilingualInstruction, ensureMomentsBilingualInstruction } from "./moments-bilingual";
 
@@ -103,6 +103,7 @@ export interface AssemblerInput {
     groupTools?: string;                     // formatted tool definitions for {{groupTools}} macro (group chat)
     customAppRichMediaDirectives?: string;   // formatted custom app rich-media directives
     chatBilingualInstruction?: string;       // session-specific bilingual output rule for {{chatBilingualInstruction}}
+    quoteTranslationEnabled?: boolean;
     statusRegionSection?: string;            // {{statusRegionSection}} — 状态区章节（native 原文 / 空 / 自定义契约）
     statusRegionExampleLine?: string;        // {{statusRegionExampleLine}} — 主动消息输出示例中的状态区行
     statusRegionComposition?: string;        // {{statusRegionComposition}} — 文字聊天模式【输出构成】行
@@ -345,6 +346,7 @@ export function buildUserPersonaText(userIdentity: UserIdentity | null | undefin
         if (userIdentity.occupation) parts.push(`Occupation: ${userIdentity.occupation}`);
         if (userIdentity.bio) parts.push(`Bio: ${userIdentity.bio}`);
         if (userIdentity.customSettings) parts.push(`${userIdentity.customSettings}`);
+        if (userIdentity.portraitEnabled && userIdentity.portraitDescription) parts.push(`用户肖像外貌参考：${userIdentity.portraitDescription}`);
     } else {
         parts.push(`The user's name is ${resolvedUserName}.`);
     }
@@ -353,7 +355,7 @@ export function buildUserPersonaText(userIdentity: UserIdentity | null | undefin
 
 // ── Helper: determine processing order from prompt_order ──
 function buildProcessingOrder(preset: PresetConfig): Prompt[] {
-    if (!preset.prompt_order?.length) return preset.prompts;
+    if (!preset.prompt_order?.length) return [...new Map(preset.prompts.map(p => [p.identifier, p])).values()];
 
     const map = new Map(preset.prompts.map(p => [p.identifier, p]));
     const ordered: Prompt[] = [];
@@ -805,8 +807,7 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
 
             // Tag-based filtering: entry's tags must ALL be present in activeTags
             if (filterEnabled && !p.marker) {
-                const entryTags = getPromptTags(p);
-                if (entryTags && !entryTags.every(t => activeTags.includes(t))) continue;
+                if (!matchesPromptScope(p, activeTags)) continue;
             }
 
             if (p.marker) {
@@ -1192,14 +1193,13 @@ export function assemblePromptPayload(input: AssemblerInput): LLMMessage[] {
     }
 
     if (input.appId === "chat" || !input.appId) {
+        finalPayload.push({ role: "system", content: buildChatQuotationInstruction(input.quoteTranslationEnabled), _debugMeta: { marker: "chat_quotation" } });
         finalPayload.push({ role: "system", content: `${TRANSFER_CURRENCY_GUIDANCE}\n${CHARACTER_CURRENCY_INSTRUCTION}\n${walletCurrencyInstruction()}`, _debugMeta: { marker: "transfer_currency_protocol" } });
         const voiceInstruction = voiceExpressionInstruction([character.id], activeTags.includes("voice") || activeTags.includes("video"));
         if (voiceInstruction) finalPayload.push({ role: "system", content: voiceInstruction, _debugMeta: { marker: "voice_expression" } });
         const albumContext = albumChatContext(input.character.id);
         if (albumContext) finalPayload.push({ role: "system", content: albumContext, _debugMeta: { marker: "shared_album_context" } });
     }
-    
-    
     if (appId === "chat" && activeTags.includes("text") && history.at(-1)?.sessionId) finalPayload.push({ role: "system", content: CHARACTER_LISTENING_INVITE_PROTOCOL, _debugMeta: { marker: "character_listening_invite" } });
     const together = appId === "chat" ? listeningRoomPrompt(character.id, history.at(-1)?.sessionId) : "";
     if (together || history.some(message => message.listeningContext || message.mediaType === "music_share" || message.mediaType === "music")) finalPayload.push({ role: "system", content: MUSIC_LISTENING_INSTRUCTION, _debugMeta: { marker: "music_listening" } });
@@ -1261,7 +1261,7 @@ export function formatRichMediaForHistory(msg: ChatMessage, userName: string, ch
             }
             return msg.content;
         case "audio":
-            return `[语音条:${d?.label ?? "语音消息"}]`;
+            return `[语音条:${voiceHistoryText(d?.label ?? "", d?.speechText)}]`;
         case "location":
             return `[位置:${d?.label ?? "位置"}]`;
         case "group_admin_notice":
@@ -1704,6 +1704,7 @@ export interface GroupAssemblerInput {
     spectatorContext?: string;
     customAppRichMediaDirectives?: string;
     chatBilingualInstruction?: string;
+    quoteTranslationEnabled?: boolean;
     statusRegionSection?: string;
     statusRegionExampleLine?: string;
     statusRegionComposition?: string;
@@ -2123,8 +2124,7 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
 
             if (!isPromptEnabled(p, preset!.prompt_order)) continue;
 
-            const gcTags = getPromptTags(p);
-            if (gcTags && !gcTags.every(t => activeTags.includes(t))) continue;
+            if (!matchesPromptScope(p, activeTags)) continue;
 
             if (p.marker) {
                 // Skip markers (handled in <member> blocks or at group level)
@@ -2316,10 +2316,9 @@ export function assembleGroupPromptPayload(input: GroupAssemblerInput): LLMMessa
     });
 
     blocks.push({ text: `${TRANSFER_CURRENCY_GUIDANCE}\n${CHARACTER_CURRENCY_INSTRUCTION}\n${walletCurrencyInstruction()}`, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "transfer_currency_protocol" });
+    blocks.push({ text: buildChatQuotationInstruction(input.quoteTranslationEnabled), role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "chat_quotation" });
     const voiceInstruction = voiceExpressionInstruction(members.map(member => member.character.id), input.appTags?.includes("voice") || input.appTags?.includes("video"));
     if (voiceInstruction) blocks.push({ text: voiceInstruction, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "voice_expression" });
-    
-    
     if (input.history.some(message => message.listeningContext || message.mediaType === "music_share" || message.mediaType === "music")) blocks.push({ text: MUSIC_LISTENING_INSTRUCTION, role: "system", depth: 0, order: Number.MAX_SAFE_INTEGER - 1, marker: "music_listening" });
     // Sort: depth descending, then order ascending
     blocks.sort((a, b) => {

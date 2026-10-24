@@ -68,6 +68,7 @@ vm.createContext(runtime);
 vm.runInContext(ts.transpileModule(pushSource, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, runtime);
 snapshot = { ...snapshot, currentTrack: track, currentTime: 45 };
 const chat = {
+    retryVersionRunRef: { current: false },
     ...runtime, pushChatMessage: runtime.pushChatMessage, session: { id: 'fixture' }, isGenerating: false,
     quotingMessage: null, ensureGroupSpeakPermission: () => true, cancelFollowUp() {},
     loadChatMessages: () => cache, getQuotePreview: () => '歌词', setQuotingMessage() {},
@@ -105,6 +106,8 @@ vm.runInContext(ts.transpileModule(`var handleSendText = ${extract('components/c
         './character-world-storage': { formatCharacterRelationsForPrompt: () => '' },
         './dwelling-storage': { readDwellingLayoutCache: () => null },
         './voice-expression': { voiceExpressionInstruction: () => '' },
+        './chat-quotation': load('lib/chat-quotation.ts'),
+        './preset-scope': load('lib/preset-scope.ts'),
         './currency-context': { walletCurrencyInstruction: () => '' },
         './photo-album-discussion': { albumChatContext: () => '' },
         './memory-storage': { loadMemoryConfig: () => ({  }) },

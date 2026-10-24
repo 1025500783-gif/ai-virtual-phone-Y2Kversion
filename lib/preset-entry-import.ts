@@ -1,3 +1,4 @@
+import { normalizeScopeAlternatives } from "./preset-scope";
 import type { Prompt, PresetConfig } from "./settings-types";
 
 /**
@@ -51,6 +52,8 @@ export function sanitizePromptEntry(raw: unknown, fallbackIdentifier: string): P
         system_prompt: !!obj.system_prompt,
         forbid_overrides: !!obj.forbid_overrides,
     };
+    prompt.scopeAlternatives = normalizeScopeAlternatives(obj.scopeAlternatives);
+    prompt.displayGroup = obj.displayGroup === null ? null : typeof obj.displayGroup === "string" && obj.displayGroup.trim() ? obj.displayGroup.trim() : undefined;
     if (Array.isArray(obj.tags)) prompt.tags = obj.tags.filter((t): t is string => typeof t === "string");
     if (typeof obj.featureTag === "string") prompt.featureTag = obj.featureTag;
     if (typeof obj.followUpOnly === "boolean") prompt.followUpOnly = obj.followUpOnly;

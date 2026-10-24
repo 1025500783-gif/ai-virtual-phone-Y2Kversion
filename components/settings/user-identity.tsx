@@ -5,15 +5,21 @@ import { Plus, User, Trash2, FileEdit, AlertCircle, Camera, Link, X, Check } fro
 import { SettingsContext } from "../phone-settings-app";
 import { loadUserIdentities, saveUserIdentities } from "@/lib/settings-storage";
 import { Input } from "@/components/ui/form";
+import { UserPortraitSettings } from "./user-portrait-settings";
 import { ConfirmDialog } from "@/components/ui/modal";
 import { deletePhoneIdentity } from "@/lib/identity-lifecycle";
 import { createIdentityId } from "@/lib/identity-space";
+import styles from "./user-identity.module.css";
 
 export type UserIdentity = {
     id: string;
     name: string;
     previousNames?: string[];
     avatarUrl?: string;
+    chatAvatarUrl?: string;
+    portraitEnabled?: boolean;
+    portraitUrl?: string;
+    portraitDescription?: string;
     bio: string;
     gender: string;
     age: string;
@@ -117,7 +123,7 @@ export function UserIdentitySettings() {
     }, [addIdentity, setSubpageRightAction]);
 
     const updateIdentity = (id: string, updates: Partial<UserIdentity>) => {
-        setIdentities(identities.map(i => i.id === id ? { ...i, ...updates } : i));
+        setIdentities(loadUserIdentities().map(i => i.id === id ? { ...i, ...updates } : i));
     };
 
     const removeIdentity = (id: string) => {
@@ -211,14 +217,14 @@ export function UserIdentitySettings() {
 
             {editingId && (
                 <div className="modal-overlay modal-overlay-bottom">
-                    <div className="modal-sheet" data-ui="modal-sheet">
+                    <div className={`modal-sheet ${styles.editor}`} data-ui="modal-sheet">
                         <div className="modal-header" data-ui="modal-header">
                             <button onClick={() => { if (isNewIdentity && editingId) removeIdentity(editingId); setIsNewIdentity(false); setEditingId(null); }} className="modal-header-btn modal-header-btn-muted"><X size={18} /></button>
                             <span className="modal-header-title">{isNewIdentity ? "添加身份" : "编辑身份"}</span>
                             <button onClick={() => { setIsNewIdentity(false); setEditingId(null); }} className="modal-header-btn modal-header-btn-action"><Check size={18} /></button>
                         </div>
 
-                        <div className="modal-body hide-scrollbar flex flex-col gap-4 pb-10" data-ui="modal-body">
+                        <div className={`modal-body flex flex-col gap-4 pb-10 ${styles.body}`} data-ui="modal-body">
                             {(() => {
                                 const identity = identities.find(c => c.id === editingId);
                                 if (!identity) return null;
@@ -269,6 +275,7 @@ export function UserIdentitySettings() {
                                             </div>
                                         </div>
 
+                                        <UserPortraitSettings identity={identity} onChange={updates => updateIdentity(identity.id, updates)} />
                                         <div className="flex gap-3">
                                             <div className="flex flex-col gap-1 flex-1 min-w-0">
                                                 <label className="menu-desc ml-1">名字 (Name)</label>
@@ -324,7 +331,7 @@ export function UserIdentitySettings() {
                                                 value={identity.bio}
                                                 onChange={(e) => updateIdentity(identity.id, { bio: e.target.value })}
                                                 placeholder="简单描述一下自己，这会作为AI了解您的基础背景..."
-                                                rows={3}
+                                                rows={6}
                                                 className="ui-textarea"
                                             />
                                         </div>
@@ -335,7 +342,7 @@ export function UserIdentitySettings() {
                                                 value={identity.customSettings}
                                                 onChange={(e) => updateIdentity(identity.id, { customSettings: e.target.value })}
                                                 placeholder="更深度的性格爱好描述，对话的特殊要求等..."
-                                                rows={4}
+                                                rows={7}
                                                 className="ui-textarea"
                                             />
                                         </div>

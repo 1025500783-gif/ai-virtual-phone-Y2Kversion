@@ -4,7 +4,7 @@ import { identityLocalStorage } from "@/lib/identity-runtime";
 import type { VoiceApiConfig, ContentAppId } from "./settings-types";
 import { loadVoiceConfigs, loadBindingConfig, resolveBinding } from "./settings-storage";
 import { synthesizeElevenLabs } from "./elevenlabs-tts";
-import { supportsVoiceExpression } from "./voice-expression";
+import { supportsVoiceExpression, voiceSpeechText } from "./voice-expression";
 
 export type VoiceApiConfigResolved = VoiceApiConfig;
 
@@ -39,6 +39,7 @@ export async function synthesizeSpeech(
     assertIdentityActive();
     if (!text.trim()) return null;
 
+    text = voiceSpeechText(text);
     const provider = voiceConfig.provider;
     // Stored expressive speech may be replayed after the user changes provider/model.
     if (!supportsVoiceExpression(provider, voiceConfig.model)) text = text.replace(/\[[a-zA-Z][a-zA-Z ,'-]{0,100}\]/g, "").trim();

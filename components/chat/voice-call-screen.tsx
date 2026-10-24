@@ -50,7 +50,7 @@ type VoiceCallScreenProps = {
 function stripBilingualForSpeech(text: string): string {
     return text
         .split("\n")
-        .map(line => splitBilingualText(line)?.original || line)
+        .map(line => splitBilingualText(line, { allowUnchangedTranslation: true })?.original || line)
         .join("\n");
 }
 
@@ -339,14 +339,14 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
             const displayText = voiceDisplayText(spokenText);
             const speechText = voiceSpeechText(stripBilingualForSpeech(spokenText));
 
-            if (!displayText) {
+            if (!displayText && !speechText) {
                 setCallState("IDLE");
                 return;
             }
 
             // 5. Add AI subtitle
             const subtitleId = `ai-${Date.now()}`;
-            setSubtitles(prev => [...prev, { id: subtitleId, role: "assistant", text: displayText }]);
+            if (displayText) setSubtitles(prev => [...prev, { id: subtitleId, role: "assistant", text: displayText }]);
 
             // 6. TTS
             setCallState("AI_SPEAKING");

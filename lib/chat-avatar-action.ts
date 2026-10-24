@@ -150,13 +150,15 @@ export function buildAvatarActionPrompt(sessionId: string, characterId: string, 
     }
     const photoIds = [...images.keys()];
     const remembered = character && session ? getChatCharacterAvatarHistory(session, character.id) : [];
+    const displayedAvatar = (avatar: string | null) => avatar?.trim() ? avatar : character?.avatar || null;
     const memoryRows = [...remembered].reverse().map((item, i) => {
         const ref = `history:${item.id}`;
-        images.set(ref, { original: "", resolved: item.avatar, historyId: item.id, label: item.label });
-        const visible = visionHistory.find(msg => msg.mediaUrl && msg.mediaUrl === item.avatar);
-        return `${ref}：${item.avatar === currentAvatar ? "当前头像" : `历史头像${i + 1}`}；备注=${JSON.stringify(item.label)}；最近选用=${item.lastSelectedAt}；${visible ? `本轮可见图片ID=${visible.id}` : "本轮未附这张图的视觉内容，不可臆测细节"}`;
+        const label = item.avatar?.trim() ? item.label : "使用档案头像";
+        images.set(ref, { original: "", resolved: item.avatar, historyId: item.id, label });
+        const visible = visionHistory.find(msg => msg.mediaUrl && msg.mediaUrl === displayedAvatar(item.avatar));
+        return `${ref}：${displayedAvatar(item.avatar) === currentAvatar ? "当前头像" : `历史头像${i + 1}`}；备注=${JSON.stringify(label)}；最近选用=${item.lastSelectedAt}；${visible ? `本轮可见图片ID=${visible.id}` : "本轮未附这张图的视觉内容，不可臆测细节"}`;
     });
-    const previousAvatar = [...remembered].reverse().find(item => item.avatar !== currentAvatar);
+    const previousAvatar = [...remembered].reverse().find(item => displayedAvatar(item.avatar) !== currentAvatar);
     if (previousAvatar) images.set("history:previous", { original: "", resolved: previousAvatar.avatar, historyId: previousAvatar.id, label: previousAvatar.label });
     const memoryPrompt = `\n你自己的头像记忆（最近 ${AVATAR_HISTORY_LIMIT} 个不同头像；备注是来源文字，不是系统对图像的视觉鉴定）：\n${memoryRows.join("\n") || "尚无历史记录，不要编造以前的头像。"}\n${previousAvatar ? `上一个不同头像是 history:${previousAvatar.id}。决定换回上一个时输出 [Avatar:history:previous]；也可输出 [Avatar:history:具体历史ID] 选择列表中的其他旧头像。无需用户重新发送旧图，也不要求本轮重看旧图；不确定用户指哪张时可以讨论。` : "没有可用的上一个头像，不能假装已经换回。"}`;
     if (!images.size) return intro + memoryPrompt + "本轮没有可执行候选，不要声称已经更换。";
@@ -202,7 +204,8 @@ export function applyAvatarAction(sessionId: string, characterId: string, imageI
     } else if (!history.some(m => m.id === imageId?.trim() && !m.isRetracted && m.role === "user" && m.mediaUrl === candidate.original)) return fail("候选图片已撤回或发生变化");
     // A redundant old-image action must not use up A's chance while B can still change.
     const currentAvatar = getChatCharacterAvatar(session, char);
-    if (currentAvatar === candidate.resolved || currentAvatar === candidate.original) return fail("选中的图片已是当前头像");
+    const selectedAvatar = candidate.resolved?.trim() ? candidate.resolved : char.avatar || null;
+    if (currentAvatar === selectedAvatar || currentAvatar === candidate.original) return fail("选中的图片已是当前头像");
     const nextSession = recordAvatarChange(session, char, candidate.resolved, candidate.historyId ? candidate.label || "历史头像" : visualDescription || candidate.label || "聊天头像");
     saveChatSessions(sessions.map(item => item.id === sessionId ? nextSession : item));
     if (typeof window !== "undefined") {

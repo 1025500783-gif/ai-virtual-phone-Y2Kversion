@@ -64,6 +64,7 @@ const PRIMARY_DATA_MODULES: DataModuleDefinition[] = [
           "chat-generating:",
           "pending_reply_",
           "ai_phone_chat_offline_turns:",
+          "ai_phone_chat_retry_versions:",
           "chat-offline-mode:",
           "chat-theater-mode:",
           "chat_plugin_data_v1:",

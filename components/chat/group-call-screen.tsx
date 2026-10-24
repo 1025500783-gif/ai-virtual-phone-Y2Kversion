@@ -41,7 +41,7 @@ type SubtitleEntry = {
 function stripBilingualForSpeech(text: string): string {
     return text
         .split("\n")
-        .map(line => splitBilingualText(line)?.original || line)
+        .map(line => splitBilingualText(line, { allowUnchangedTranslation: true })?.original || line)
         .join("\n");
 }
 
@@ -246,7 +246,7 @@ export function GroupCallScreen({ type, session, characters, onEnd, initiator = 
                 const displayText = voiceDisplayText(spokenText);
                 const speechText = voiceSpeechText(stripBilingualForSpeech(spokenText));
 
-                if (!displayText && !(statusPanel || innerMonologue)) continue;
+                if (!displayText && !speechText && !(statusPanel || innerMonologue)) continue;
 
                 const aiMsg = pushChatMessage({
                     sessionId: session.id, role: "assistant",
@@ -260,7 +260,7 @@ export function GroupCallScreen({ type, session, characters, onEnd, initiator = 
                 });
                 messagesRef.current = [...messagesRef.current, aiMsg];
 
-                setSubtitles(prev => [...prev, {
+                if (displayText) setSubtitles(prev => [...prev, {
                     id: aiMsg.id, role: "assistant",
                     text: displayText,
                     senderName: r.characterName,

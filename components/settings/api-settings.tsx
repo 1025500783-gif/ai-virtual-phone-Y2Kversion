@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useContext } from "react";
-import { Plus, RefreshCw, Rss, AlertCircle, FileEdit, Trash2, X, Check } from "lucide-react";
+import { Plus, RefreshCw, Rss, AlertCircle, FileEdit, Copy, Trash2, X, Check } from "lucide-react";
 import { SettingsContext } from "../phone-settings-app";
 import type { ApiConfig } from "@/lib/settings-types";
 import { loadApiConfigs, removeApiConfigReferences, saveApiConfigs } from "@/lib/settings-storage";
@@ -96,6 +96,24 @@ export function ApiSettings() {
         persist(configs.map(c => c.id === id ? { ...c, ...updates } : c));
     };
 
+    const duplicateConfig = (source: ApiConfig) => {
+        const baseName = `${source.name || source.provider} 副本`;
+        let name = baseName;
+        let suffix = 2;
+        while (configs.some(config => config.name === name)) name = `${baseName} ${suffix++}`;
+        const copy: ApiConfig = {
+            ...structuredClone(source),
+            id: `config-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+            name,
+        };
+        persist([...configs, copy]);
+        if (fetchedModels[source.id]) {
+            setFetchedModels(prev => ({ ...prev, [copy.id]: [...prev[source.id]] }));
+        }
+        setIsNewConfig(true);
+        setEditingId(copy.id);
+    };
+
     const removeConfig = (id: string) => {
         persist(configs.filter(c => c.id !== id));
         removeApiConfigReferences(id);
@@ -151,6 +169,8 @@ export function ApiSettings() {
             } else {
                 throw new Error("返回数据格式不符合预期");
             }
+            modelNames = [...new Set(modelNames.filter(name => typeof name === "string" && name.trim()))]
+                .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base", numeric: true }));
             setFetchedModels(prev => ({ ...prev, [config.id]: modelNames }));
             setTestResult(prev => ({ ...prev, [config.id]: { success: true, message: `成功获取 ${modelNames.length} 个模型` } }));
         } catch (error: unknown) {
@@ -254,6 +274,18 @@ export function ApiSettings() {
                                 <span className="menu-desc truncate">{config.defaultModel || config.provider || "未设置模型"}</span>
                             </div>
                             <div className="flex gap-2 shrink-0 items-center justify-end">
+                                <button
+                                    type="button"
+                                    aria-label={`复制 ${config.name || config.provider}`}
+                                    title="复制配置"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        duplicateConfig(config);
+                                    }}
+                                    className="ui-link-btn"
+                                >
+                                    <Copy size={18} />
+                                </button>
                                 <button
                                     type="button"
                                     onClick={(event) => {
@@ -361,7 +393,7 @@ export function ApiSettings() {
                                         </div>
 
                                         <div className="flex flex-col gap-1">
-                                            <label className="menu-desc ml-1">默认模型 (Default Model)</label>
+                                            <label className="menu-desc ml-1">默认模型 (Default Model){fetchedModels[config.id]?.length ? " · A–Z" : ""}</label>
                                             <div className="flex gap-2">
                                                 {fetchedModels[config.id] && fetchedModels[config.id].length > 0 ? (
                                                     <select
@@ -370,6 +402,9 @@ export function ApiSettings() {
                                                         className="ui-select flex-1"
                                                     >
                                                         <option value="">请选择模型...</option>
+                                                        {config.defaultModel && !fetchedModels[config.id].includes(config.defaultModel) && (
+                                                            <option value={config.defaultModel}>{config.defaultModel}（当前模型）</option>
+                                                        )}
                                                         {fetchedModels[config.id].map(m => (
                                                             <option key={m} value={m}>{m}</option>
                                                         ))}

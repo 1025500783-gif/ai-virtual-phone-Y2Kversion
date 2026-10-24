@@ -2645,6 +2645,15 @@
   position: absolute;
   top: 7px;
   right: 11px;
+  color: transparent;
+  opacity: 0;
+  pointer-events: auto;
+}
+
+.chat-room-wrapper[data-imessage-private] .imessage-composer-ai-reply:focus-visible {
+  outline: 2px solid var(--im26-blue);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 
 .chat-room-wrapper[data-imessage-private] .imessage-composer-subject::after {
@@ -2797,7 +2806,8 @@
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='5 4 6 8'%3E%3Cpath d='M8 11a.5.5 0 0 0 .5-.5V6.707l1.146 1.147a.5.5 0 0 0 .708-.708l-2-2a.5.5 0 0 0-.708 0l-2 2a.5.5 0 1 0 .708.708L7.5 6.707V10.5a.5.5 0 0 0 .5.5' fill='black'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
 }
 
-.chat-room-wrapper[data-imessage-private] .chat-input-bar[data-show-send] .chat-send-btn {
+.chat-room-wrapper[data-imessage-private] .chat-input-bar[data-show-send] .chat-send-btn,
+.chat-room-wrapper[data-imessage-private] .chat-input-bar:focus-within .chat-send-btn {
   display: grid !important;
 }
 
@@ -2823,7 +2833,8 @@
   color: rgba(255,255,255,.92);
 }
 
-.chat-room-wrapper[data-imessage-private] .chat-input-bar[data-show-send] .chat-voice-message-btn {
+.chat-room-wrapper[data-imessage-private] .chat-input-bar[data-show-send] .chat-voice-message-btn,
+.chat-room-wrapper[data-imessage-private] .chat-input-bar:focus-within .chat-voice-message-btn {
   display: none !important;
 }
 

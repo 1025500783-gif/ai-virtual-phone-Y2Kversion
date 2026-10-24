@@ -64,6 +64,9 @@ import { SessionCustomCSS } from "@/components/ui/session-custom-css";
 import { STORY_CSS_EXAMPLE } from "@/lib/css-examples";
 import { applyEditOutputRegex } from "@/lib/llm-prompt-assembler";
 import { MacroEngine } from "@/lib/macro-engine";
+import { registerFloatingPageContext } from "@/lib/floating-tools-context";
+import { loadActivityCharacters } from "@/lib/chat-app-characters";
+import { useActivityAvatarUpdates } from "@/components/use-activity-avatar-updates";
 
 type StoryAppProps = {
   onClose: () => void;
@@ -305,10 +308,15 @@ export function StoryApp({ onClose }: StoryAppProps) {
   const longPressTriggeredRef = useRef(false);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
 
-  const characters = useMemo(() => loadCharacters(), []);
+  const avatarRevision = useActivityAvatarUpdates();
+  const characters = useMemo(() => loadActivityCharacters(), [avatarRevision]);
+  useEffect(() => {
+    if (!activeCharacterId) return;
+    return registerFloatingPageContext({ ownerApp: "story", appId: "story", characterId: activeCharacterId, label: "当前角色 · 剧情" });
+  }, [activeCharacterId]);
   const userIdentity = useMemo(
     () => resolveUserIdentity(activeCharacterId, "story") ?? resolveUserIdentity(activeCharacterId) ?? resolveUserIdentity(),
-    [activeCharacterId]
+    [activeCharacterId, avatarRevision]
   );
   const currentCharacter = useMemo(
     () => characters.find((character) => character.id === activeCharacterId) || null,

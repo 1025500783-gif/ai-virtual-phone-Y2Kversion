@@ -1,0 +1,11 @@
+.chat-retry-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.chat-retry-dialog { background:rgba(248,248,250,.96); }
+@media (prefers-color-scheme:dark) { .chat-retry-dialog { background:rgba(38,38,40,.96); } }
+.chat-retry-dialog .chat-retry-heading h3 { margin:0; }
+.chat-retry-version-nav { display:flex; align-items:center; flex-shrink:0; gap:2px; }
+.chat-retry-version-nav > span { font-size:11px; color:inherit; opacity:.55; min-width:26px; text-align:center; font-variant-numeric:tabular-nums; }
+.chat-retry-version-nav button { display:grid; place-items:center; width:32px; height:36px; padding:0; border:0; border-radius:8px; background:transparent; color:inherit; cursor:pointer; }
+.chat-retry-version-nav button:disabled { color:#a3a3a8; opacity:.45; cursor:default; }
+.chat-retry-version-nav button:not(:disabled):active { background:rgba(128,128,128,.12); }
+.chat-retry-version-preview { max-height:140px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:10px 12px; margin-bottom:12px; border-radius:12px; font-size:13px; line-height:1.6; background:rgba(128,128,128,.08); }
+.chat-retry-dialog .chat-retry-actions button:disabled { opacity:.45; cursor:default; }

@@ -23,8 +23,18 @@ const html=samples.map(([text,chatText],i)=>`<div class="chat-msg-wrapper" data-
 const render=(text,chatText)=>renderToStaticMarkup(React.createElement(component.BilingualTextBlock,{text,chatText,defaultExpanded:true}));
 assert.ok(!render('Be good,|乖，',true).includes('乖，'));assert.ok(render('Be good,|乖，',true).includes('Be good,'));
 assert.ok(render('乖，',false).includes('乖，'));assert.ok(!render('乖，',true).includes('乖，'));
-assert.ok(!html.includes('凭你那<br'));assert.ok(html.includes('tell me baby'));assert.ok(html.includes('未提供中文译文'));
+assert.ok(!html.includes('凭你那<br'));assert.ok(html.includes('tell me baby'));assert.ok(!html.includes('未提供中文译文'));
+for (const text of ['Lars|Lars','Lars','Lars|“Lars”','🙂|🙂']) {
+ const output=render(text,true);
+ assert.ok(!output.includes('未提供中文译文'));
+ assert.ok(!output.includes('|'));
+ assert.ok(!output.includes('chat-bilingual-divider'));
+}
+assert.equal(helpers.splitBilingualText('[exhales] Lars|Lars',{allowUnchangedTranslation:true}).original,'[exhales] Lars');
+assert.equal(helpers.splitBilingualText('Lars|Lars\nHello|你好',{allowUnchangedTranslation:true}).original,'Lars\nHello');
+assert.equal(helpers.splitBilingualText('Lars|Lars|Reed|Reed',{allowUnchangedTranslation:true}).translated,'Lars | Reed');
 assert.match(read('lib/chat-engine.ts'),/instruction.*CHAT_TEXT_PAIRING_INSTRUCTION/);
+if(process.argv.includes('--static-only')) { console.log('PASS: actual bilingual component static rendering, unchanged names/emoji, voice cues, segmented and multiline names; no browser/model/storage.'); process.exit(0); }
 (async()=>{const browser=await require(process.env.PLAYWRIGHT_MODULE||'playwright').chromium.launch({headless:true,executablePath:process.env.CHAT_TEST_BROWSER});try{
 const page=await browser.newPage({viewport:{width:390,height:844}});
 await page.setContent(`<style>*{box-sizing:border-box}body{margin:0;font-family:Arial}.chat-room-wrapper{padding:18px;width:100vw}.chat-msg-wrapper{display:flex;margin-bottom:12px}.chat-markdown p{margin:0}.chat-bubble-role-assistant,.chat-bubble-role-user{padding:10px 13px;background:#e9e9eb}</style><div class="chat-room-wrapper" data-imessage-private>${html}</div>`);
@@ -32,8 +42,8 @@ for(const f of ['styles/chat.css','styles/imessage26.css'])await page.addStyleTa
 for(const width of [320,390,430])for(const preset of ['classic','glass']){
  await page.setViewportSize({width,height:844});await page.evaluate(p=>{const node=document.querySelector('.chat-room-wrapper');node.dataset.beautyPreset=p;node.toggleAttribute('data-glass-bubbles',p==='glass')},preset);
  const result=await page.evaluate(()=>{const q=s=>document.querySelector(s),b=e=>e.getBoundingClientRect();return {orig:b(q('#sample-0 .chat-bilingual-section-original')).width,trans:b(q('#sample-0 .chat-bilingual-section-translation')).width,soft:q('#sample-1').querySelectorAll('br').length,user:q('#sample-3').querySelectorAll('br').length,poem:q('#sample-4').querySelectorAll('br').length,missing:q('#sample-2').textContent,overflow:[...document.querySelectorAll('[id^="sample-"]')].some(e=>b(e).right>innerWidth)}});
- assert.ok(result.orig>140,`${preset}/${width}: readable text width`);assert.ok(Math.abs(result.orig-result.trans)<1,`${preset}/${width}: equal columns`);assert.equal(result.soft,0);assert.equal(result.user,1);assert.equal(result.poem,2);assert.match(result.missing,/未提供中文译文/);assert.ok(!result.overflow);
+ assert.ok(result.orig>140,`${preset}/${width}: readable text width`);assert.ok(Math.abs(result.orig-result.trans)<1,`${preset}/${width}: equal columns`);assert.equal(result.soft,0);assert.equal(result.user,1);assert.equal(result.poem,2);assert.doesNotMatch(result.missing,/未提供中文译文/);assert.ok(!result.overflow);
 }
 await page.screenshot({path:path.join(root,'tmp/chat-text-layout-check.png')});
-console.log('PASS: soft Chinese/English lines, preserved user/explicit layouts, unchanged-name missing-translation state, default bilingual compatibility, equal-width pairs across 320/390/430 and classic/glass. No API calls.');
+console.log('PASS: soft Chinese/English lines, preserved user/explicit layouts, unchanged names shown once, default bilingual compatibility, equal-width pairs across 320/390/430 and classic/glass. No API calls.');
 }finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

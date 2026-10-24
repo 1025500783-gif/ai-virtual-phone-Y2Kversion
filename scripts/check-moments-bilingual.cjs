@@ -31,14 +31,16 @@ const assembler = load('lib/llm-prompt-assembler.ts', {
     './music-listening': load('lib/music-listening.ts'),
     './macro-engine': macro, './character-time': time, './prompt-time': promptTime,
     './content-tag-utils': tags,
+    './preset-scope': load('lib/preset-scope.ts', { './content-tag-utils': tags }),
     './prompt-sanitizer': load('lib/prompt-sanitizer.ts'),
     './character-world-storage': { formatCharacterRelationsForPrompt: () => '' },
     './dwelling-storage': { readDwellingLayoutCache: () => null },
     './voice-expression': { voiceExpressionInstruction: () => '' },
+    './chat-quotation': load('lib/chat-quotation.ts'),
     './currency-context': { walletCurrencyInstruction: () => '', CHARACTER_CURRENCY_INSTRUCTION: '' },
     './transfer-protocol': { TRANSFER_CURRENCY_GUIDANCE: '' },
     './photo-album-discussion': { albumChatContext: () => '' },
-    './memory-storage': { loadMemoryConfig: () => ({  }) },
+    './memory-storage': { loadMemoryConfig: () => ({ cognitionEnabled: false }) },
     './moments-storage': { loadMomentsConfig: () => config },
     './moments-bilingual': bilingual,
 });
@@ -82,6 +84,19 @@ const group = assembler.assembleGroupPromptPayload({
 });
 assert.equal(countRule(group), 1, 'real group assembler covers member-attributed Moments actions');
 const noActions = { ...custom, prompts: [{ ...custom.prompts[0], content: 'Reply in normal chat.' }] };
+const quotation=load('lib/chat-quotation.ts');
+function assertQuotation(messages, enabled) {
+ const blocks=messages.filter(m=>m._debugMeta?.marker?.includes('chat_quotation'));
+ assert.equal(blocks.length,1,'one independent quotation block');
+ assert.ok(blocks[0].content.includes(quotation.CHAT_QUOTATION_STYLE_INSTRUCTION));
+ assert.equal(text(messages).split(quotation.CHAT_QUOTATION_STYLE_INSTRUCTION).length-1,1);
+ assert.equal(blocks[0].content.includes(quotation.CHAT_QUOTATION_TRANSLATION_INSTRUCTION),enabled!==false);
+}
+for(const enabled of [undefined,true,false]) for(const tags of [['chat','text'],['chat','voice'],['chat','offline']]) for(const preset of [builtIn,noActions,null]) {
+ assertQuotation(assembler.assemblePromptPayload({...input(preset,'post',false),appId:'chat',appTags:tags,chatBilingualInstruction:'',quoteTranslationEnabled:enabled}),enabled);
+ assertQuotation(assembler.assembleGroupPromptPayload({members:[{character:char,worldBooks:[],regexes:[],currentStateValues:[]}],history:[],preset,regexes:[],appTags:tags.map(t=>t==='chat'?'group_chat':t),timeAware:false,quoteTranslationEnabled:enabled}),enabled);
+}
+assert.equal(assembler.assemblePromptPayload(input(noActions,'post')).filter(m=>m._debugMeta?.marker==='chat_quotation').length,0,'no chat rule in Moments');
 assert.equal(countRule(assembler.assemblePromptPayload({ ...input(noActions, 'post'), appId: 'chat', appTags: ['chat', 'text'] })), 0);
 const rule = defaults.DEFAULT_MOMENTS_BILINGUAL_PROMPT;
 assert.match(rule, /中文正文仅夹少量外语词或专名.*今天真的很chill.*无需译文/);
@@ -114,7 +129,7 @@ const engine = load('lib/moments-engine.ts', {
         loadApiConfigs: () => [{ id: 'fake', defaultModel: 'fake' }], loadPresets: () => [selectedPreset],
         loadWorldBooks: () => [], loadRegexes: () => [], resolveUserIdentity: () => ({ id: 'user-a', name: 'User' }),
     },
-    './memory-storage': { loadMemoryConfig: () => ({  }), incrementEventCounter: () => {} },
+    './memory-storage': { loadMemoryConfig: () => ({ cognitionEnabled: false }), incrementEventCounter: () => {} },
     './memory-service': { retrieveCoreMemoriesForPrompt: async () => [], retrieveMemoriesForPrompt: async () => [] },
     './memory-injector': { formatCoreMemories: () => '', formatLongTermMemories: () => '' },
     './memory-summarizer': { maybeRunSummarization: async () => {} },

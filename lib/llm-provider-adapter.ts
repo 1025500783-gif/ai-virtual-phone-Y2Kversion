@@ -1,3 +1,4 @@
+import { resolveEnabledGenerationParameters } from "./generation-parameters";
 import type { LLMContentPart, LLMMessage } from "./llm-prompt-assembler";
 import type { ApiConfig, PresetConfig } from "./settings-types";
 import {
@@ -294,19 +295,17 @@ export function parseProviderStreamDelta(providerKind: LlmProviderKind, data: un
 }
 
 function buildSamplingBody(preset: PresetConfig | null): Record<string, unknown> {
-    const body: Record<string, unknown> = {
-        temperature: preset?.temperature ?? 0.8,
-        top_p: preset?.top_p ?? 1.0,
-        frequency_penalty: preset?.frequency_penalty ?? 0,
-        presence_penalty: preset?.presence_penalty ?? 0,
-    };
-    if (preset?.openai_max_tokens && preset.openai_max_tokens > 0) body.max_tokens = preset.openai_max_tokens;
-    if (preset?.repetition_penalty !== undefined && preset.repetition_penalty !== 1) {
-        body.repetition_penalty = preset.repetition_penalty;
-    }
-    if (preset?.top_k && preset.top_k > 0) body.top_k = preset.top_k;
-    if (preset?.min_p && preset.min_p > 0) body.min_p = preset.min_p;
-    if (preset?.top_a && preset.top_a > 0) body.top_a = preset.top_a;
+    const enabled = resolveEnabledGenerationParameters(preset);
+    const body: Record<string, unknown> = {};
+    if (enabled.has("temperature")) body.temperature = preset?.temperature ?? 0.8;
+    if (enabled.has("top_p")) body.top_p = preset?.top_p ?? 1;
+    if (enabled.has("frequency_penalty")) body.frequency_penalty = preset?.frequency_penalty ?? 0;
+    if (enabled.has("presence_penalty")) body.presence_penalty = preset?.presence_penalty ?? 0;
+    if (enabled.has("repetition_penalty")) body.repetition_penalty = preset?.repetition_penalty ?? 1;
+    if (enabled.has("top_k")) body.top_k = preset?.top_k ?? 0;
+    if (enabled.has("min_p")) body.min_p = preset?.min_p ?? 0;
+    if (enabled.has("top_a")) body.top_a = preset?.top_a ?? 0;
+    if (enabled.has("max_tokens") && preset?.openai_max_tokens && preset.openai_max_tokens > 0) body.max_tokens = preset.openai_max_tokens;
     return body;
 }
 
@@ -561,16 +560,17 @@ function buildAnthropicRequest(
 ): LlmRequestPayload {
     const { systemText: system, rest } = splitLeadingSystemMessages(messages);
     const bodyMessages = compactAnthropicMessages(rest);
+    const enabled = resolveEnabledGenerationParameters(preset);
     const body: Record<string, unknown> = {
         model: config.defaultModel,
         messages: bodyMessages,
-        temperature: preset?.temperature ?? 0.8,
+        ...(enabled.has("temperature") ? { temperature: preset?.temperature ?? 0.8 } : {}),
         max_tokens: options.maxTokens && options.maxTokens > 0
             ? Math.floor(options.maxTokens)
-            : preset?.openai_max_tokens && preset.openai_max_tokens > 0 ? preset.openai_max_tokens : ANTHROPIC_AUTO_MAX_TOKENS,
+            : enabled.has("max_tokens") && preset?.openai_max_tokens && preset.openai_max_tokens > 0 ? preset.openai_max_tokens : ANTHROPIC_AUTO_MAX_TOKENS,
     };
-    if (preset?.top_p !== undefined) body.top_p = preset.top_p;
-    if (preset?.top_k && preset.top_k > 0) body.top_k = preset.top_k;
+    if (enabled.has("top_p") && preset?.top_p !== undefined) body.top_p = preset.top_p;
+    if (enabled.has("top_k")) body.top_k = preset?.top_k ?? 0;
     if (system) body.system = system;
     if (options.stream) body.stream = true;
     if (options.tools?.length) {
@@ -629,15 +629,16 @@ function buildGeminiRequest(
     const { systemText, rest } = splitLeadingSystemMessages(messages);
     const headers = buildRequestHeaders(config, baseUrl);
     delete headers.Authorization;
+    const enabled = resolveEnabledGenerationParameters(preset);
     const body: Record<string, unknown> = {
         contents: compactGeminiContents(rest),
         generationConfig: {
-            temperature: preset?.temperature ?? 0.8,
-            topP: preset?.top_p ?? 1,
-            ...(preset?.top_k && preset.top_k > 0 ? { topK: preset.top_k } : {}),
+            ...(enabled.has("temperature") ? { temperature: preset?.temperature ?? 0.8 } : {}),
+            ...(enabled.has("top_p") ? { topP: preset?.top_p ?? 1 } : {}),
+            ...(enabled.has("top_k") ? { topK: preset?.top_k ?? 0 } : {}),
             ...(options.maxTokens && options.maxTokens > 0
                 ? { maxOutputTokens: Math.floor(options.maxTokens) }
-                : preset?.openai_max_tokens && preset.openai_max_tokens > 0 ? { maxOutputTokens: preset.openai_max_tokens } : {}),
+                : enabled.has("max_tokens") && preset?.openai_max_tokens && preset.openai_max_tokens > 0 ? { maxOutputTokens: preset.openai_max_tokens } : {}),
         },
         safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },

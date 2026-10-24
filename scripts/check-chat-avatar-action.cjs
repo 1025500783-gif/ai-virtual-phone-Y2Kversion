@@ -35,7 +35,7 @@ assert.equal(avatar.getChatCharacterAvatar(null,chars[1]),sessions[1].characterA
 const selected=avatar.getChatCharacterAvatar(null,chars[0]);sessions=[];
 assert.equal(avatar.getChatCharacterAvatar(null,chars[0]),selected,'deleting conversation keeps app identity');
 owner='B';assert.equal(avatar.getChatCharacterAvatar(null,chars[0]),chars[0].avatar,'identity isolated');owner='A';
-avatar.saveChatAppCharacterAvatar('c1',null,[]);assert.equal(avatar.getChatCharacterAvatar(null,chars[0]),null,'explicit empty avatar is shared');
+avatar.saveChatAppCharacterAvatar('c1',null,[]);assert.equal(avatar.getChatCharacterAvatar(null,chars[0]),chars[0].avatar,'clearing chat avatar restores profile fallback');
 console.log('PASS: real app avatar store, private/group/Moments consistency, profile independence, deletion and identity isolation.');
 stores.clear();
 sessions=[
@@ -46,3 +46,11 @@ assert.equal(avatar.getChatCharacterAvatar(sessions[0],chars[0]),'new','latest s
 assert.equal(avatar.getChatCharacterAvatar(null,chars[0]),'new','migration persists globally');
 assert.equal(avatar.getChatCharacterAvatarHistory(sessions[0],'c1')[0].avatar,'new','shared avatar history follows migrated selection');
 console.log('PASS: deterministic legacy migration uses selection dates rather than conversation order.');
+stores.clear();sessions=[{id:'s1',contactId:'c1'}];
+avatar.saveChatAppCharacterAvatar('c1',null,[{id:'avh_fallback',avatar:null,label:'默认空头像',recordedAt:'2026-10-01T00:00:00Z',lastSelectedAt:'2026-10-01T00:00:00Z',selections:1}]);
+history=[{id:'fallback-turn',sessionId:'s1',role:'user',content:'换回之前的头像'}];
+const fallbackPrompt=build('s1','c1',history,[],true);
+assert(fallbackPrompt.includes('使用档案头像'));assert(fallbackPrompt.includes('当前头像'));
+assert(!fallbackPrompt.includes('上一个不同头像是'),'fallback to the current profile is not a different previous avatar');
+assert.equal(apply('s1','c1','history:avh_fallback'),false,'selecting the already displayed profile is a no-op');
+console.log('PASS: avatar history describes profile fallback and rejects redundant fallback actions.');

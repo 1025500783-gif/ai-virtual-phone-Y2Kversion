@@ -27,6 +27,7 @@ import {
 import { DATA_MODULES, getLightModuleIds } from "@/lib/data-management/modules";
 import { BINDING_ACCENTS, CONTENT_APP_ACCENTS } from "@/lib/ui-accent-colors";
 import { Select, Toggle } from "@/components/ui/form";
+import styles from "./data-management.module.css";
 import { backupIdentityCards } from "@/lib/data-management/identity-backup";
 import { ConfirmDialog, ContentDialog } from "@/components/ui/modal";
 import { CloudUpload } from "lucide-react";
@@ -614,9 +615,9 @@ export function DataManagement({ onNotice }: DataManagementProps) {
   };
 
   return (
-    <div className="page-menu data-management-menu" style={{ padding: 0 }}>
+    <div className={`page-menu data-management-menu ${styles.page}`} style={{ padding: 0 }}>
       <div className="data-section">
-        <DataSectionTitle>Module Breakdown</DataSectionTitle>
+        <DataSectionTitle>数据概览</DataSectionTitle>
         <div className="menu-group">
           {snapshot?.modules.length ? (
             <div className="menu-item data-readonly-item data-pie-item">
@@ -635,7 +636,7 @@ export function DataManagement({ onNotice }: DataManagementProps) {
       </div>
 
       <div className="data-section">
-        <DataSectionTitle>Local Protection</DataSectionTitle>
+        <DataSectionTitle>本地保护</DataSectionTitle>
         <div className="menu-group">
           <div className="menu-item data-readonly-item">
             <DataSettingsIcon icon={ShieldCheck} color={persisted ? BINDING_ACCENTS.embedding : BINDING_ACCENTS.regex} />
@@ -651,29 +652,34 @@ export function DataManagement({ onNotice }: DataManagementProps) {
       </div>
 
       <div className="data-section">
-        <DataSectionTitle>Media Cleanup</DataSectionTitle>
+        <DataSectionTitle>媒体管理</DataSectionTitle>
         <div className="menu-group">
           <div className="menu-item data-readonly-item">
             <DataSettingsIcon icon={Archive} color={CONTENT_APP_ACCENTS.moments} />
             <div className="menu-label-group">
-              <span className="menu-label">图片/多媒体文件自动压缩及清理</span>
-              <span className="menu-desc">开启后每天最多执行一次：4 天以上压缩聊天、朋友圈、小红书动态图片；7 天以上清理聊天图片、朋友圈/小红书真实图和本地音乐。壁纸、图标、dock、字体等常驻资源不纳入自动清理。</span>
+              <span className="menu-label">自动压缩与清理</span>
+              <span className="menu-desc">每天最多运行一次</span>
             </div>
             <span className="menu-right">
-              <Toggle checked={mediaConfig.enabled} onChange={updateMediaMaintenance} disabled={Boolean(busy)} />
+              <Toggle ariaLabel="自动压缩与清理" checked={mediaConfig.enabled} onChange={updateMediaMaintenance} disabled={Boolean(busy)} />
             </span>
           </div>
-          <div className="menu-item data-readonly-item">
+          <div className={styles.mediaRules}>
+            <div><span className={styles.ruleAge}>4 天后</span><p>压缩聊天、朋友圈和小红书动态图片</p></div>
+            <div><span className={styles.ruleAge}>7 天后</span><p>清理聊天图片、朋友圈及小红书真实图、本地音乐</p></div>
+            <p className={styles.ruleNote}>壁纸、图标、Dock、字体等常驻资源保留。</p>
+          </div>
+          <div className={`menu-item data-readonly-item ${styles.maintenanceStatus}`}>
             <div className="menu-label-group">
-              <span className="menu-label">清理状态</span>
+              <span className="menu-label">最近清理</span>
               <span className="menu-desc">
-                {mediaState.lastRunAt ? `上次执行：${formatTime(mediaState.lastRunAt)}。` : "尚未执行。"}
+                {mediaState.lastRunAt ? `${formatTime(mediaState.lastRunAt)}。` : "尚未执行"}
                 {mediaState.lastResult ? formatMediaMaintenanceResult(mediaState.lastResult) : ""}
                 {mediaState.lastError ? ` 最近错误：${mediaState.lastError}` : ""}
               </span>
             </div>
           </div>
-          <div className="data-menu-actions">
+          <div className={`data-menu-actions ${styles.mediaActions}`}>
             <button
               type="button"
               className={`ui-btn ui-btn-primary ${busy === "媒体清理中" ? "is-busy" : ""}`}
@@ -688,14 +694,14 @@ export function DataManagement({ onNotice }: DataManagementProps) {
               onClick={() => setConfirmRequest({ type: "orphan-theme" })}
               disabled={Boolean(busy)}
             >
-              {busy === "孤儿素材清理中" ? <><Loader2 size={16} className="animate-spin" /> 清理中…</> : <><Trash2 size={16} /> 清理未引用主题素材</>}
+              {busy === "孤儿素材清理中" ? <><Loader2 size={16} className="animate-spin" /> 清理中…</> : <><Trash2 size={16} /> 清理闲置主题素材</>}
             </button>
           </div>
         </div>
       </div>
 
       <div className="data-section">
-        <DataSectionTitle>Storage Space</DataSectionTitle>
+        <DataSectionTitle>存储空间</DataSectionTitle>
         <div className="menu-group">
           <div className="menu-item data-readonly-item">
             <DataSettingsIcon icon={HardDrive} color={BINDING_ACCENTS.api} />
@@ -706,7 +712,7 @@ export function DataManagement({ onNotice }: DataManagementProps) {
                   ? (spaceScanDetail ?? "扫描中…")
                   : spaceStats
                     ? `共约 ${formatBytes(spaceStats.reduce((sum, item) => sum + item.bytes, 0))}，按内容类别列出，可单独清理`
-                    : "按图片、语音、音乐等内容类别统计占用，看得懂再清理"}
+                    : "按图片、语音、音乐等类别查看占用"}
               </span>
             </div>
             <div className="menu-right data-inline-actions">
@@ -747,30 +753,31 @@ export function DataManagement({ onNotice }: DataManagementProps) {
       </div>
 
       <div className="data-section">
-        <DataSectionTitle>Export & Import</DataSectionTitle>
+        <DataSectionTitle>备份与恢复</DataSectionTitle>
         <div className="menu-group">
           <div className="menu-item data-readonly-item">
             <div className="menu-label-group">
-              <span className="menu-label">备份身份范围</span>
-              <span className="menu-desc">本地和自动云备份共用。公共档案保存一份，私人档案按 user 分开保存。</span>
+              <span className="menu-label">备份范围</span>
+              <span className="menu-desc">用于文件和自动云备份，公共档案只保存一份。</span>
             </div>
           </div>
-          <div className="data-chip-panel" role="group" aria-label="备份身份范围" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {([['all', '全部 user'], ['current', '当前 user']] as const).map(([value, label]) => (
+          <div className={styles.scopePanel}>
+            <div className={styles.scopeControl} role="group" aria-label="备份身份范围">
+            {([['all', '全部身份'], ['current', '当前身份']] as const).map(([value, label]) => (
               <button key={value} type="button" aria-pressed={(cloudConfig.backupScope ?? 'all') === value}
-                className="data-module-chip" data-selected={(cloudConfig.backupScope ?? 'all') === value ? '' : undefined}
-                style={iconStyle("var(--c-text-title)")}
-                disabled={Boolean(busy) || cloudBackingUp} onClick={() => updateCloud({ backupScope: value })}><span className="data-chip-label">{label}</span></button>
+                className={styles.scopeOption}
+                disabled={Boolean(busy) || cloudBackingUp} onClick={() => updateCloud({ backupScope: value })}>{label}</button>
             ))}
-            <p className="menu-desc" style={{ flexBasis: "100%" }}>{cloudConfig.backupScope === 'current' ? '包含公共档案与当前 user，其他 user 的聊天、相册等私人数据不导出。' : '包含公共档案与全部 user 的私人档案。多身份备份仅供此分档版 Float 恢复。'}</p>
+            </div>
+            <p className={styles.scopeHint}>{cloudConfig.backupScope === 'current' ? '包含公共档案与当前身份；其他身份的聊天、相册等私人数据不导出。' : '包含公共档案与所有身份的私人数据。多身份备份需使用此分档版 Float 恢复。'}</p>
           </div>
           <div className="menu-item data-readonly-item">
             <div className="menu-label-group">
-              <span className="menu-label">本地导出·不含图片/多媒体</span>
-              <span className="menu-desc">仅【本地导出备份文件】生效：去掉壁纸、聊天图、朋友圈图等大文件（保留角色头像），文件更小、导出不卡。云端备份已支持分片上传，会完整备份图片，不受此开关影响。</span>
+              <span className="menu-label">文件备份不含多媒体</span>
+              <span className="menu-desc">省略壁纸、聊天图、朋友圈图等大文件，保留角色头像。仅影响文件导出，云备份仍包含完整媒体。</span>
             </div>
             <span className="menu-right">
-              <Toggle checked={cloudConfig.excludeMedia} onChange={(checked) => updateCloud({ excludeMedia: checked })} />
+              <Toggle ariaLabel="文件备份不含多媒体" checked={cloudConfig.excludeMedia} onChange={(checked) => updateCloud({ excludeMedia: checked })} />
             </span>
           </div>
           <div className="menu-item data-readonly-item">
@@ -814,7 +821,7 @@ export function DataManagement({ onNotice }: DataManagementProps) {
       </div>
 
       <div className="data-section">
-        <DataSectionTitle>Cloud Backup</DataSectionTitle>
+        <DataSectionTitle>云端备份</DataSectionTitle>
         <div className="menu-group">
           <div className="menu-item data-readonly-item">
             <DataSettingsIcon icon={CloudUpload} color={BINDING_ACCENTS.api} />
@@ -881,7 +888,7 @@ export function DataManagement({ onNotice }: DataManagementProps) {
 
             {showRestore && (
               <div className="data-cloud-restore">
-                <div className="data-cloud-status">恢复会合并写入，默认保留本机冲突项；私人数据和公共档案可分别选择覆盖。本机额外数据会保留。</div>
+                <div className="data-cloud-status">恢复会合并写入：同 ID 以云端为准，本机额外数据会保留。</div>
                 {busy === "恢复中" ? (
                   <div className="data-cloud-progress" role="status">
                     <div className="data-cloud-progress-track">
@@ -1102,7 +1109,7 @@ export function DataManagement({ onNotice }: DataManagementProps) {
       )}
 
       <div className="data-section data-cleanup-section">
-        <DataSectionTitle>Module Cleanup</DataSectionTitle>
+        <DataSectionTitle>按模块清理</DataSectionTitle>
         <div className="data-danger-alert" role="note" aria-label="危险操作提示">
           <span className="data-danger-icon" aria-hidden="true">
             <AlertTriangle size={17} strokeWidth={2.1} />

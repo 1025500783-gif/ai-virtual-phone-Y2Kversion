@@ -28,7 +28,7 @@ import { CheckPhoneDebugErrorCard } from "@/components/checkphone/checkphone-deb
 import { BlackMarketApp } from "@/components/shopping/black-market-app";
 import { ConfirmDialog } from "@/components/ui";
 import { splitBilingualText } from "@/lib/bilingual-text";
-import { loadInteractableCharacters as loadCharacters } from "@/lib/character-storage";
+import { loadActivityCharacters as loadCharacters } from "@/lib/chat-app-characters";
 import type { Character } from "@/lib/character-types";
 import { createOrGetSession, pushChatMessage } from "@/lib/chat-storage";
 import {
